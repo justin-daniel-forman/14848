@@ -7,14 +7,10 @@ class Column {
 private:
 
     MemTable mtable;
+    std::dequeue <SSTable> sst_list;
 
-    //SSTs that have been previously written
-    //Keep all of the indexes in memory
-    SSTable sst_list[5];
-    SSIndex disk_index_list[5];
-
-    int  dump_mtable(SSTable *sst);
-    void compact_sst();
+    int  dump_mtable(void);
+    void compact_sst(void);
 
 public:
     Column(string attr_name, comp_opt_t compression);
@@ -59,11 +55,42 @@ class SSIndex {
 private:
     BloomFilter bf; //FIXME: Is Bloom filter necessary since Log(n) lookup is pretty fast?
     std::map<string, index_entry_t> index;
+    int curr_offset;
 
 public:
-    index_entry_t lookup_key(string key);
-    int add_key(string key, string value);
-    int delete_key(string key);
+
+    index_entry_t *lookup_key(string key) {
+        std::map<string, index_entry_t> it = index.find[key];
+        if(it != index.end()) {
+            return it;
+        } else {
+            return NULL;
+        }
+    };
+
+    int add_key(string key, string value) {
+        index_entry_t *old_entry;
+        index_entry_t new_entry;
+
+        if((old_entry = lookup_key(key)) == NULL) {
+            new_entry.offset = curr_offset;
+            new_entry.length = strlen(value);
+            new_entry.value = value;
+            curr_offset += new_entry.length;
+            index.insert(std::pair<string, index_entry_t>(key, new_entry));
+
+        } else {
+            old_entry.value = value;
+
+        }
+
+    };
+
+    int delete_key(string key) {
+        //find the entry in the map and unflip the valid bit
+
+    };
+
 
 };
 
@@ -81,7 +108,9 @@ private:
 public:
     //Reads the associated value if key is mapped
     int read(string key, string *result);
-    bool merge_table(SSTable input);
+
+    //Called on the newer one with a pointer to the older one
+    bool merge_older_table(SSTable *oldtable);
 
     SSTable(string filename, SSIndex index, char *data_array) {
         //write the data array to specified filename
