@@ -1,154 +1,141 @@
-/*
- *  Keeps track of attributes in our NoSQL Database
+/***
  *
- */
-class Column {
+ *  column.cpp
+ *
+ *  Contains definitions for class functions needed to store a column
+ *  in our NoSQL database.
+ *
+ *  Authors: Justin Forman, Mark Wuebbens
+ *
+ ***/
 
-private:
+#include <iostream>
+#include <cstdlib>
 
-    MemTable mtable;
-    std::dequeue <SSTable> sst_list;
+#include "inc/Column.h"
+#include "inc/SSTable.h"
+#include "inc/Memtable.h"
 
-    int  dump_mtable(void);
-    void compact_sst(void);
+using namespace std;
 
-public:
-    Column(string attr_name, comp_opt_t compression);
-    string read(string key);
-    string write(string key, string value);
-    int del(string key);
+/*****************************************************************************
+ *                                  COLUMN                                   *
+ *****************************************************************************/
 
-};
-
-
-/*
- *  Representation of our in-memory append-only SSTable
- */
-class MemTable {
-
-private:
-    char  byte_array[PAGE_SIZE];
-    int   curr_offset;
-    SSIndex index;
-
-public:
-    void write(string key, string value);
-    string read(string key, int offset);
-    char *get_byte_array(void);
-
-};
+Column::Column (int comp_opt) {
+    _mtable = new Memtable;
+    cout << "We created a column" << std::endl;
+}
 
 
-/*
- *  Representation of the index for an SSTable to be kept in memory
- */
-typedef struct {
-
-    int  offset;
-    int  len;
-    bool valid;
-
-} index_entry_t;
-
-class SSIndex {
-
-private:
-    BloomFilter bf; //FIXME: Is Bloom filter necessary since Log(n) lookup is pretty fast?
-    std::map<string, index_entry_t> index;
-    int curr_offset;
-
-public:
-
-    index_entry_t *lookup_key(string key) {
-        std::map<string, index_entry_t> it = index.find[key];
-        if(it != index.end()) {
-            return it;
-        } else {
-            return NULL;
-        }
-    };
-
-    int add_key(string key, string value) {
-        index_entry_t *old_entry;
-        index_entry_t new_entry;
-
-        if((old_entry = lookup_key(key)) == NULL) {
-            new_entry.offset = curr_offset;
-            new_entry.length = strlen(value);
-            new_entry.value = value;
-            curr_offset += new_entry.length;
-            index.insert(std::pair<string, index_entry_t>(key, new_entry));
-
-        } else {
-            old_entry.value = value;
-
-        }
-
-    };
-
-    int delete_key(string key) {
-        //find the entry in the map and unflip the valid bit
-
-    };
+Column::~Column() {
+    cout << "STARTING column destructor" << std::endl;
+    delete _mtable;
+}
 
 
-};
+std::string Column::read (std::string key) {
+    cout << "Hello from Col" << std::endl;
+    return "foo";
+}
 
 
-/*
- *  Representation of an SST to be kept on disk
- */
-class SSTable {
+/*****************************************************************************
+ *                                  SSTable                                  *
+ *****************************************************************************/
 
-private:
-    //FIXME: Keep open file descriptor?
-    string _filename;
-    SSIndex index;
+SSTable::SSTable(std::string filename, SSIndex *index, char *data_array) {
+    return;
+}
 
-public:
-    //Reads the associated value if key is mapped
-    int read(string key, string *result);
 
-    //Called on the newer one with a pointer to the older one
-    bool merge_older_table(SSTable *oldtable);
+SSTable::~SSTable(void) {
+    return;
+}
 
-    SSTable(string filename, SSIndex index, char *data_array) {
-        //write the data array to specified filename
-        //Save index internally
-    }
 
-    destroy() {
-        //delete _filename to free up disk space
-        //Free the index here?
-        //implies we are done with this table
-    }
+/*****************************************************************************
+ *                                  MemTable                                 *
+ *****************************************************************************/
+Memtable::Memtable(void) {
+    cout << "Creating new Memtable" << std::endl;
+
+    _index = new SSIndex;
+    return;
+}
+
+
+Memtable::~Memtable(void) {
+    cout << "Deleting memtable" << std::endl;
+
+    delete _index;
+    return;
 
 }
 
 
-/*
- *  Bloom filter for checking membership in a set
- */
-class BloomFilter {
+/*****************************************************************************
+ *                                  SSIndex                                  *
+ *****************************************************************************/
+SSIndex::SSIndex(void) {
+    cout << "Creating new Index" << std::endl;
 
-private:
-    int _size;
-    int *bf;
+    _bf = new BloomFilter(1);
+    return;
+}
 
-    int h0(string k);
-    int h1(string k);
-    int h2(string k);
 
-public:
-    bool hit(string key);
-    void insert(string key);
+SSIndex::~SSIndex(void) {
+    cout << "Deleting index" << std::endl;
+    delete _bf;
+    return;
+}
 
-    BloomFilter(int size) {
-        _size = size;
-        bf = malloc(sizeof(int) * _size);
-    }
 
-    ~BloomFilter() {
-        free(bf);
-    }
-};
+index_entry_t* SSIndex::lookup_key (string key) {
+//    std::map<string, index_entry_t> it = _index.find[key];
+//    if(it != _index.end()) {
+//        return it;
+//    } else {
+//        return NULL;
+//    }
+//
+    return NULL;
+}
+
+
+int SSIndex::add_key (string key, string value) {
+//    index_entry_t *old_entry;
+//    index_entry_t new_entry;
+//
+//    if((old_entry = lookup_key(key)) == NULL) {
+//        new_entry.offset = curr_offset;
+//        new_entry.length = strlen(value);
+//        new_entry.value = value;
+//        curr_offset += new_entry.length;
+//        index.insert(std::pair<string, index_entry_t>(key, new_entry));
+//
+//    } else {
+//        old_entry.value = value;
+//
+//    }
+    return 0;
+}
+
+
+/*****************************************************************************
+ *                                  BloomFilter                              *
+ *****************************************************************************/
+BloomFilter::BloomFilter(int size) {
+    cout << "Creating new BloomFilter" << std::endl;
+
+    _size = size;
+    _bf   = (int*) std::malloc(sizeof(int) * size);
+    return;
+}
+
+
+BloomFilter::~BloomFilter() {
+    std::free(_bf);
+    return;
+}
