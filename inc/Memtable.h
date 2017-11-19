@@ -8,13 +8,12 @@
 #define PAGE_SIZE 4096
 
 /*
- *  Representation of our in-memory append-only SSTable
+ *  Memtable implementation
  */
 class Memtable {
 
 private:
-    char    _byte_array[PAGE_SIZE];
-    int     _curr_offset;
+    std::string _data;
     SSIndex *_index;
 
 public:
@@ -23,8 +22,8 @@ public:
     ~Memtable(void);
 
     void write(std::string key, std::string value);
-    std::string read(std::string key, int offset);
-    char *get_byte_array(void);
+    std::string read(std::string key);
+    void del(std::string key);
 
 };
 

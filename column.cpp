@@ -24,34 +24,20 @@ using namespace std;
 
 Column::Column (int comp_opt) {
     _mtable = new Memtable;
-    cout << "We created a column" << std::endl;
+    cout << "Creating new Column" << std::endl;
 }
 
 
 Column::~Column() {
-    cout << "STARTING column destructor" << std::endl;
     delete _mtable;
 }
 
 
 std::string Column::read (std::string key) {
-    cout << "Hello from Col" << std::endl;
+    cout << "Hello from Col read" << std::endl;
     return "foo";
 }
 
-
-/*****************************************************************************
- *                                  SSTable                                  *
- *****************************************************************************/
-
-SSTable::SSTable(std::string filename, SSIndex *index, char *data_array) {
-    return;
-}
-
-
-SSTable::~SSTable(void) {
-    return;
-}
 
 
 /*****************************************************************************
@@ -66,60 +52,126 @@ Memtable::Memtable(void) {
 
 
 Memtable::~Memtable(void) {
-    cout << "Deleting memtable" << std::endl;
 
     delete _index;
     return;
 
 }
 
+void Memtable::write (string key, string value) {
 
+    int curr_offset = _data.length();
+    int next_offset = curr_offset + value.length();
+
+    if (next_offset <= PAGE_SIZE) {
+
+        //Write the value to our byte array
+        _data.append(value);
+
+        //Add the key to the index
+        _index->map_key(key, curr_offset, value.length());
+
+    } else {
+        //hmmmmm... spill to disk?
+        std::cout << "implement me...\n";
+    }
+
+    cout << "Just wrote [" << key << ":" << value << "] to memtable!\n";
+}
+
+string Memtable::read (string key) {
+
+    string ret;
+    index_entry_t *entry = _index->lookup_key(key);
+
+    if (entry && entry->valid) {
+
+        ret.assign(_data, entry->offset, entry->len);
+
+    }
+
+    cout << "Just read [" << key << ":" << ret << "] from memtable!\n";
+    return ret;
+
+}
+
+//Does not hard remove anything. Merely suggests the data is removed
+//by setting the valid bit in the index to false
+void Memtable::del (string key) {
+
+    cout << "Deleting this guy: " << key << " from memtable!\n";
+    _index->invalidate_key(key);
+
+}
 /*****************************************************************************
  *                                  SSIndex                                  *
  *****************************************************************************/
 SSIndex::SSIndex(void) {
     cout << "Creating new Index" << std::endl;
-
-    _bf = new BloomFilter(1);
     return;
 }
-
 
 SSIndex::~SSIndex(void) {
-    cout << "Deleting index" << std::endl;
-    delete _bf;
     return;
 }
 
-
 index_entry_t* SSIndex::lookup_key (string key) {
-//    std::map<string, index_entry_t> it = _index.find[key];
-//    if(it != _index.end()) {
-//        return it;
-//    } else {
-//        return NULL;
-//    }
-//
+
+    _iter = _index.find(key);
+    if (_iter != _index.end()) {
+        return _iter->second;
+    }
     return NULL;
 }
 
+void SSIndex::erase_key (string key) {
+    _index.erase(key);
+}
 
-int SSIndex::add_key (string key, string value) {
-//    index_entry_t *old_entry;
-//    index_entry_t new_entry;
-//
-//    if((old_entry = lookup_key(key)) == NULL) {
-//        new_entry.offset = curr_offset;
-//        new_entry.length = strlen(value);
-//        new_entry.value = value;
-//        curr_offset += new_entry.length;
-//        index.insert(std::pair<string, index_entry_t>(key, new_entry));
-//
-//    } else {
-//        old_entry.value = value;
-//
-//    }
-    return 0;
+void SSIndex::invalidate_key (string key) {
+
+    _iter = _index.find(key);
+
+    if (_iter != _index.end()) {
+        //Key is mapped! Invalidate it
+        _iter->second->valid = false;
+    }
+}
+
+void SSIndex::map_key (string key, int offset, int length) {
+
+    _iter = _index.find(key);
+
+    if (_iter != _index.end()) {
+        //Key already mapped, update its offset
+        _iter->second->offset = offset;
+        _iter->second->valid = true;
+
+    } else {
+        //Make a new map entry
+        index_entry_t *new_entry = new index_entry_t;
+        new_entry->offset = offset;
+        new_entry->len = length;
+        new_entry->valid = true;
+
+        //Insert it
+        _index.insert(
+            std::map<string, index_entry_t*>::value_type(key, new_entry)
+        );
+    }
+}
+
+/*****************************************************************************
+ *                                  SSTable                                  *
+ *****************************************************************************/
+
+SSTable::SSTable(std::string filename, SSIndex *index, char *data_array) {
+    return;
+}
+
+
+SSTable::~SSTable(void) {
+    return;
 }
 
 

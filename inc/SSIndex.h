@@ -24,9 +24,8 @@ typedef struct {
 class SSIndex {
 
 private:
-    BloomFilter *_bf; //FIXME: Is Bloom filter necessary since Log(n) lookup is pretty fast?
-    std::map<std::string, index_entry_t> _index;
-    int _curr_offset;
+    std::map<std::string, index_entry_t*> _index;
+    std::map<std::string, index_entry_t*>::iterator _iter;
 
 public:
 
@@ -34,8 +33,9 @@ public:
     ~SSIndex(void);
 
     index_entry_t *lookup_key(std::string);
-    int add_key(std::string, std::string);
-    int delete_key(std::string);
+    void map_key(std::string, int, int);
+    void erase_key(std::string); //Actually remove the key from this map
+    void invalidate_key(std::string); //set 'valid=false' on the entry
 
 
 };

@@ -1,2 +1,2 @@
 all:
-	g++ -o col test.cpp column.cpp
+	g++ -Wall -o col test.cpp column.cpp
