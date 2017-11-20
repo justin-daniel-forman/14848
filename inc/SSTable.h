@@ -8,16 +8,19 @@
 class SSTable {
 
 private:
-    //FIXME: Keep open file descriptor?
-    char  _filename[100];
-    SSIndex     *_index;
+    char     _filename[100];
+    SSIndex *_index;
+    int      _size;
 
 public:
     //Reads the associated value if key is mapped
     int read(std::string key, char *result);
 
     //Called on the newer one with a pointer to the older one
-    bool merge_older_table(SSTable *oldtable);
+    int merge_older_table(SSTable *oldtable);
+
+    SSIndex *get_index(void);
+    char *get_filename(void);
 
     //write the data array to specified filename
     //Save index internally

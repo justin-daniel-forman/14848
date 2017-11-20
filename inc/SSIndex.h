@@ -36,7 +36,7 @@ public:
     void map_key(std::string, int, int);
     void erase_key(std::string); //Actually remove the key from this map
     void invalidate_key(std::string); //set 'valid=false' on the entry
-
+    int  merge_newer_index(SSIndex*, int);
 
 };
 
