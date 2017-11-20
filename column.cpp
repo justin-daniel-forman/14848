@@ -11,6 +11,8 @@
 
 #include <iostream>
 #include <cstdlib>
+#include <fstream>
+#include <string.h>
 
 #include "inc/Column.h"
 #include "inc/SSTable.h"
@@ -43,6 +45,7 @@ std::string Column::read (std::string key) {
 /*****************************************************************************
  *                                  MemTable                                 *
  *****************************************************************************/
+
 Memtable::Memtable(void) {
     cout << "Creating new Memtable" << std::endl;
 
@@ -58,7 +61,16 @@ Memtable::~Memtable(void) {
 
 }
 
-void Memtable::write (string key, string value) {
+const char* Memtable::get_data(void) {
+    return _data.c_str();
+}
+
+SSIndex* Memtable::get_index(void) {
+    return _index;
+}
+
+
+int Memtable::write (string key, string value) {
 
     int curr_offset = _data.length();
     int next_offset = curr_offset + value.length();
@@ -71,12 +83,14 @@ void Memtable::write (string key, string value) {
         //Add the key to the index
         _index->map_key(key, curr_offset, value.length());
 
+        cout << "Just wrote [" << key << ":" << value << "] to memtable!\n";
+        return 0;
+
+
     } else {
-        //hmmmmm... spill to disk?
-        std::cout << "implement me...\n";
+        return -1;
     }
 
-    cout << "Just wrote [" << key << ":" << value << "] to memtable!\n";
 }
 
 string Memtable::read (string key) {
@@ -103,9 +117,12 @@ void Memtable::del (string key) {
     _index->invalidate_key(key);
 
 }
+
+
 /*****************************************************************************
  *                                  SSIndex                                  *
  *****************************************************************************/
+
 SSIndex::SSIndex(void) {
     cout << "Creating new Index" << std::endl;
     return;
@@ -165,15 +182,67 @@ void SSIndex::map_key (string key, int offset, int length) {
  *                                  SSTable                                  *
  *****************************************************************************/
 
-SSTable::SSTable(std::string filename, SSIndex *index, char *data_array) {
+SSTable::SSTable(const char *filename, SSIndex *index, const char *data) {
+
+    ofstream fp;
+
+    //SST inherits old Memtable index and data
+    _index    = index;
+    memcpy(_filename, filename, sizeof(_filename));
+
+    //On error, set filename to be ""
+    fp.open(filename, std::ofstream::binary);
+    if(!fp.is_open()) {
+        cout << filename << " cannot be opened, ERROR" << std::endl;
+        memset(_filename, '\0', sizeof(_filename));
+    }
+
+    fp.write(data, strlen(data));
+    fp.close();
+
+    //Error handling happens after closing the file. A flag will have been
+    //set if the write was unsuccessful
+    if(!fp) {
+        cout << filename << " could not be written to, ERROR" << std::endl;
+        memset(_filename, '\0', sizeof(_filename));
+    }
+
     return;
 }
 
 
 SSTable::~SSTable(void) {
+    delete _index;
     return;
 }
 
+
+int SSTable::read(std::string key, char *result) {
+
+    ifstream fp;
+    index_entry_t *entry = _index->lookup_key(key);
+
+    //Data is in SSTable
+    if (entry && entry->valid) {
+
+        fp.open(_filename);
+        fp.seekg(entry->offset, fp.beg);
+        fp.read(result, entry->len);
+        fp.close();
+
+        if(!fp) {
+            cout << "Something went wrong reading from SST" << std::endl;
+            return -1;
+        }
+
+    //Data is not in SSTable
+    } else {
+        return -1;
+    }
+
+    return 0;
+
+}
 
 /*****************************************************************************
  *                                  BloomFilter                              *
