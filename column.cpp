@@ -33,8 +33,18 @@ Column::~Column() {
 }
 
 
-std::string Column::read (std::string key) {
+string Column::read (string key) {
     cout << "Hello from Col read" << std::endl;
+    return "foo";
+}
+
+void Column::write (string key, string value) {
+    cout << "Hello from Col write" << std::endl;
+    return "foo";
+}
+
+void Column::del (string key) {
+    cout << "Hello from Col del" << std::endl;
     return "foo";
 }
 
@@ -115,6 +125,9 @@ SSIndex::~SSIndex(void) {
     return;
 }
 
+/*
+ * SSIndex.lookup(key)
+ */
 index_entry_t* SSIndex::lookup_key (string key) {
 
     _iter = _index.find(key);
@@ -124,11 +137,18 @@ index_entry_t* SSIndex::lookup_key (string key) {
     return NULL;
 }
 
-void SSIndex::erase_key (string key) {
+/*
+ * SSIndex.erase(key)
+ */
+void SSIndex::erase (string key) {
+    //FIXME - free the index_entry_t?
     _index.erase(key);
 }
 
-void SSIndex::invalidate_key (string key) {
+/*
+ * SSIndex.invalidate(key)
+ */
+void SSIndex::invalidate (string key) {
 
     _iter = _index.find(key);
 
@@ -138,13 +158,17 @@ void SSIndex::invalidate_key (string key) {
     }
 }
 
-void SSIndex::map_key (string key, int offset, int length) {
+/*
+ * SSIndex.map(key, offset, len)
+ */
+void SSIndex::map (string key, int offset, int length) {
 
     _iter = _index.find(key);
 
     if (_iter != _index.end()) {
-        //Key already mapped, update its offset
+        //Key already mapped, update it
         _iter->second->offset = offset;
+        _iter->second->len = length;
         _iter->second->valid = true;
 
     } else {

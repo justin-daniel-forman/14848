@@ -32,10 +32,10 @@ public:
     SSIndex(void);
     ~SSIndex(void);
 
-    index_entry_t *lookup_key(std::string);
-    void map_key(std::string, int, int);
-    void erase_key(std::string); //Actually remove the key from this map
-    void invalidate_key(std::string); //set 'valid=false' on the entry
+    index_entry_t *lookup(std::string);
+    void map(std::string, int, int);
+    void erase(std::string); //Actually remove the key from this map
+    void invalidate(std::string); //set 'valid=false' on the entry
 
 
 };

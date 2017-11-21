@@ -26,8 +26,8 @@ public:
     ~Column();
 
     std::string read(std::string);
-    std::string write(std::string, std::string);
-    int del(std::string);
+    void write(std::string, std::string);
+    void del(std::string);
 
 };
 
