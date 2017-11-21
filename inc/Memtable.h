@@ -13,16 +13,17 @@
 class Memtable {
 
 private:
+    std::string _name;
     std::string _data;
     SSIndex *_index;
 
 public:
 
-    Memtable(void);
+    Memtable(std::string);
     ~Memtable(void);
 
     std::string read(std::string);
-    void write(std::string, std::string);
+    int write(std::string, std::string);
     void del(std::string);
     const char *get_data(void);
     SSIndex *get_index(void);

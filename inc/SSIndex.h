@@ -24,12 +24,14 @@ typedef struct {
 class SSIndex {
 
 private:
+
+    std::string _name;
     std::map<std::string, index_entry_t*> _index;
     std::map<std::string, index_entry_t*>::iterator _iter;
 
 public:
 
-    SSIndex(void);
+    SSIndex(std::string);
     ~SSIndex(void);
 
     index_entry_t *lookup(std::string);

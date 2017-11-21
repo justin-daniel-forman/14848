@@ -8,6 +8,7 @@
 class SSTable {
 
 private:
+    std::string _name;
     char     _filename[100];
     SSIndex *_index;
     int      _size;
@@ -24,7 +25,7 @@ public:
 
     //write the data array to specified filename
     //Save index internally
-    SSTable(const char *filename, SSIndex *index, const char *data);
+    SSTable(std::string, const char *filename, SSIndex *index, const char *data);
 
     //delete _filename to free up disk space
     //Free the index here?

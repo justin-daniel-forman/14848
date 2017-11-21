@@ -15,6 +15,7 @@ class Column {
 
 private:
 
+    std::string _name;
     Memtable *_mtable;
     std::deque <SSTable> _sst_list;
 
@@ -22,7 +23,7 @@ private:
     void compact_sst(void);
 
 public:
-    Column(int);
+    Column(std::string, int);
     ~Column();
 
     std::string read(std::string);

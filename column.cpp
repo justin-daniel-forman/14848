@@ -24,9 +24,10 @@ using namespace std;
  *                                  COLUMN                                   *
  *****************************************************************************/
 
-Column::Column (int comp_opt) {
-    _mtable = new Memtable;
-    cout << "Creating new Column" << std::endl;
+Column::Column (string name, int comp_opt) {
+    _name = name;
+    _mtable = new Memtable(name.append("_mtable"));
+    cout << "Creating " << _name << std::endl;
 }
 
 
@@ -36,18 +37,16 @@ Column::~Column() {
 
 
 string Column::read (string key) {
-    cout << "Hello from Col read" << std::endl;
-    return "foo";
+
+    string ret = "foo";
+    cout <<  _name << " read (" << key << ":" << ret << ")\n";
+    return ret;
 }
 
 void Column::write (string key, string value) {
-    cout << "Hello from Col write" << std::endl;
-    return "foo";
 }
 
 void Column::del (string key) {
-    cout << "Hello from Col del" << std::endl;
-    return "foo";
 }
 
 
@@ -56,10 +55,12 @@ void Column::del (string key) {
  *                                  MemTable                                 *
  *****************************************************************************/
 
-Memtable::Memtable(void) {
-    cout << "Creating new Memtable" << std::endl;
+Memtable::Memtable(string name) {
 
-    _index = new SSIndex;
+    _name = name;
+    _index = new SSIndex(name.append("_index"));
+
+    cout << "Creating " << _name << std::endl;
     return;
 }
 
@@ -91,9 +92,9 @@ int Memtable::write (string key, string value) {
         _data.append(value);
 
         //Add the key to the index
-        _index->map_key(key, curr_offset, value.length());
+        _index->map(key, curr_offset, value.length());
 
-        cout << "Just wrote [" << key << ":" << value << "] " << "size: " << value.length() <<  " to memtable!\n";
+        cout << _name << " wrote [" << key << ":" << value << "]\n";
         return 0;
 
 
@@ -106,7 +107,7 @@ int Memtable::write (string key, string value) {
 string Memtable::read (string key) {
 
     string ret;
-    index_entry_t *entry = _index->lookup_key(key);
+    index_entry_t *entry = _index->lookup(key);
 
     if (entry && entry->valid) {
 
@@ -114,7 +115,7 @@ string Memtable::read (string key) {
 
     }
 
-    cout << "Just read [" << key << ":" << ret << "] from memtable!\n";
+    cout << _name << " read [" << key << ":" << ret << "]\n";
     return ret;
 
 }
@@ -123,18 +124,20 @@ string Memtable::read (string key) {
 //by setting the valid bit in the index to false
 void Memtable::del (string key) {
 
-    cout << "Deleting this guy: " << key << " from memtable!\n";
-    _index->invalidate_key(key);
+    cout << _name << " deleted: " << key << std::endl;
+    _index->invalidate(key);
 
 }
-
 
 /*****************************************************************************
  *                                  SSIndex                                  *
  *****************************************************************************/
 
-SSIndex::SSIndex(void) {
-    cout << "Creating new Index" << std::endl;
+SSIndex::SSIndex(string name) {
+
+    _name = name;
+
+    cout << "Creating " << _name << std::endl;
     return;
 }
 
@@ -145,7 +148,7 @@ SSIndex::~SSIndex(void) {
 /*
  * SSIndex.lookup(key)
  */
-index_entry_t* SSIndex::lookup_key (string key) {
+index_entry_t* SSIndex::lookup (string key) {
 
     _iter = _index.find(key);
     if (_iter != _index.end()) {
@@ -183,13 +186,13 @@ void SSIndex::map (string key, int offset, int length) {
     _iter = _index.find(key);
 
     if (_iter != _index.end()) {
+        //Remap existing entry
         _iter->second->offset = offset;
         _iter->second->len = length;
         _iter->second->valid = true;
+        cout << _name << " remapped: " << key << std::endl;
 
     } else {
-        cout << "Make a new entry" << std::endl;
-
         //Make a new map entry
         index_entry_t *new_entry = new index_entry_t;
         new_entry->offset = offset;
@@ -200,6 +203,7 @@ void SSIndex::map (string key, int offset, int length) {
         _index.insert(
             std::map<string, index_entry_t*>::value_type(key, new_entry)
         );
+        cout << _name << " mapped: " << key << std::endl;
     }
 }
 
@@ -221,11 +225,13 @@ int SSIndex::merge_newer_index(SSIndex *new_index, int new_size) {
         key = _iter->first;
 
         //Only insert into new index if key was never seen
-        new_entry = new_index->lookup_key(key);
+        new_entry = new_index->lookup(key);
         if(new_entry == NULL) {
             cout << "inserting " << key << " into new index" << std::endl;
             cout << "old len: " << old_entry->len << std::endl;
-            new_index->map_key((&key)->c_str(), old_entry->offset + new_size, old_entry->len);
+            new_index->map((&key)->c_str(),
+                            old_entry->offset + new_size,
+                            old_entry->len);
         }
 
         _iter++;
@@ -253,12 +259,14 @@ int SSIndex::merge_newer_index(SSIndex *new_index, int new_size) {
  *
  *
  ***/
-SSTable::SSTable(const char *filename, SSIndex *index, const char *data) {
+SSTable::SSTable(string name, const char *filename,
+                 SSIndex *index, const char *data) {
 
     ofstream fp;
 
     //SST inherits old Memtable index and data
-    _index    = index;
+    _index = index;
+    _name = name;
     memcpy(_filename, filename, sizeof(_filename));
 
     //On error, set filename to be ""
@@ -304,7 +312,7 @@ SSTable::~SSTable(void) {
 int SSTable::read(std::string key, char *result) {
 
     ifstream fp;
-    index_entry_t *entry = _index->lookup_key(key);
+    index_entry_t *entry = _index->lookup(key);
 
     //Data is in SSTable
     if (entry && entry->valid) {
@@ -315,7 +323,7 @@ int SSTable::read(std::string key, char *result) {
         fp.close();
 
         if(!fp) {
-            cout << "Something went wrong reading from SST" << std::endl;
+            cout << "Something went wrong reading from SST " << _name << std::endl;
             return -1;
         }
 
