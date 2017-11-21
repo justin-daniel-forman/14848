@@ -24,6 +24,8 @@ public:
     std::string read(std::string);
     void write(std::string, std::string);
     void del(std::string);
+    const char *get_data(void);
+    SSIndex *get_index(void);
 
 };
 
