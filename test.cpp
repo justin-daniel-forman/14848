@@ -15,7 +15,7 @@ int main() {
     Column col0("col0", 0);
     col0.read("foo");
 
-    Memtable table0("memtable0");
+    Memtable table0("mtable0");
     table0.write("key", "****LKIJ:LK;kllellldllakdkfja;lkelkj***");
     table0.write("foo", "bar");
     table0.write("forman", "forman");
@@ -26,7 +26,7 @@ int main() {
     table0.del("foo");
     table0.read("foo");
 
-    Memtable table1("memtable1");
+    Memtable table1("mtable1");
     table1.write("key", "new0");
     table1.write("foo", "new1");
     table1.write("forman", "new2");
@@ -34,8 +34,8 @@ int main() {
     table1.write("new_only", "unique_new");
 
     //char result[4096];
-    //SSTable sstable0("ss0", "table0", table0.get_index(), table0.get_data());
-    //SSTable sstable1("ss1", "table1", table1.get_index(), table1.get_data());
+    SSTable sstable0("sstable0", table0.get_index(), table0.get_data());
+    SSTable sstable1("sstable1", table1.get_index(), table1.get_data());
 
     //sstable1.merge_older_table(&sstable0);
 

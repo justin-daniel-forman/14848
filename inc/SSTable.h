@@ -9,23 +9,24 @@ class SSTable {
 
 private:
     std::string _name;
-    char     _filename[100];
+    std::string _filename;
+    bool _valid; //Hacky error handling for now
     SSIndex *_index;
     int      _size;
 
 public:
     //Reads the associated value if key is mapped
-    int read(std::string key, char *result);
+    std::string read(std::string key);
 
     //Called on the newer one with a pointer to the older one
     int merge_older_table(SSTable *oldtable);
 
     SSIndex *get_index(void);
-    char *get_filename(void);
+    std::string get_filename(void);
 
     //write the data array to specified filename
     //Save index internally
-    SSTable(std::string, const char *filename, SSIndex *index, const char *data);
+    SSTable(std::string, SSIndex*, std::string);
 
     //delete _filename to free up disk space
     //Free the index here?

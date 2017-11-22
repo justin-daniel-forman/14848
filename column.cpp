@@ -215,23 +215,22 @@ void SSIndex::map (string key, int offset, int length) {
  ***/
 int SSIndex::merge_newer_index(SSIndex *new_index, int new_size) {
     //insert each of my keys into the newer index
-    index_entry_t *old_entry;
+    index_entry_t *my_entry;
     index_entry_t *new_entry;
-    string key;
+    string my_key;
     _iter = _index.begin();
 
     while(_iter != _index.end()) {
-        old_entry = _iter->second;
-        key = _iter->first;
+        my_entry = _iter->second;
+        my_key = _iter->first;
 
         //Only insert into new index if key was never seen
-        new_entry = new_index->lookup(key);
+        new_entry = new_index->lookup(my_key);
         if(new_entry == NULL) {
-            cout << "inserting " << key << " into new index" << std::endl;
-            cout << "old len: " << old_entry->len << std::endl;
-            new_index->map((&key)->c_str(),
-                            old_entry->offset + new_size,
-                            old_entry->len);
+            cout << "inserting " << my_key << " into new index" << std::endl;
+            new_index->map(my_key,
+                           my_entry->offset + new_size,
+                           my_entry->len);
         }
 
         _iter++;
@@ -253,41 +252,51 @@ int SSIndex::merge_newer_index(SSIndex *new_index, int new_size) {
  *  should not be deleted, but the data is copied, so it is fine to dispose
  *  of that after this constructor is called.
  *
- *  filename:   The name of the location on disk to store the data
+ *  uuid:   The name of the location on disk to store the data
  *  index:      The index created while constructing the Memtable
- *  data:       A byte array of data to store on disk
+ *  data:       A string of data to store on disk
  *
  *
  ***/
-SSTable::SSTable(string name, const char *filename,
-                 SSIndex *index, const char *data) {
+SSTable::SSTable(string uuid, SSIndex *index, string data) {
 
     ofstream fp;
 
     //SST inherits old Memtable index and data
     _index = index;
-    _name = name;
-    memcpy(_filename, filename, sizeof(_filename));
+    _name = uuid;
+    _filename = uuid;
+    _size = data.length();
+    _valid = false; //Hacky error handling for now
 
-    //On error, set filename to be ""
-    fp.open(filename, std::ofstream::binary);
-    if(!fp.is_open()) {
-        cout << filename << " cannot be opened, ERROR" << std::endl;
-        memset(_filename, '\0', sizeof(_filename));
+    cout << "Creating " << _name << std::endl;
+
+    //Open the on disk file
+    fp.open(_name.c_str());
+    if(fp.is_open()) {
+
+        //Write the data
+        fp.write(data.c_str(), data.length());
+        if(fp.good()) {
+
+            //Close the file for now
+            fp.close();
+            if (fp.good()) {
+                //SUCCESS!
+                _valid = true;
+
+            } else {
+                //Closing error
+                cout << _filename << " cannot be closed, ERROR" << std::endl;
+            }
+        } else {
+            //Writing error
+            cout << _filename << " cannot be written, ERROR" << std::endl;
+        }
+    } else {
+        //Opening error
+        cout << _filename << " cannot be opened, ERROR" << std::endl;
     }
-
-    fp.write(data, strlen(data));
-    _size = strlen(data);
-    fp.close();
-
-    //Error handling happens after closing the file. A flag will have been
-    //set if the write was unsuccessful
-    if(!fp) {
-        cout << filename << " could not be written to, ERROR" << std::endl;
-        memset(_filename, '\0', sizeof(_filename));
-    }
-
-    return;
 }
 
 /***
@@ -309,31 +318,28 @@ SSTable::~SSTable(void) {
  *  the index before opening the file.
  *
  ***/
-int SSTable::read(std::string key, char *result) {
+string SSTable::read(std::string key) {
 
-    ifstream fp;
+    string ret;
+    ifstream fp(_filename.c_str());
     index_entry_t *entry = _index->lookup(key);
+    int offset, len;
 
     //Data is in SSTable
     if (entry && entry->valid) {
 
-        fp.open(_filename);
-        fp.seekg(entry->offset, fp.beg);
-        fp.read(result, entry->len);
-        fp.close();
+        offset = entry->offset;
+        len = entry->len;
 
-        if(!fp) {
-            cout << "Something went wrong reading from SST " << _name << std::endl;
-            return -1;
+        ret.assign(ios::beg + offset, ios::beg + offset + len);
+
+        if(!fp.good()) {
+            cout << "Error reading from SST " << _name << std::endl;
+            ret.clear();
         }
-
-    //Data is not in SSTable
-    } else {
-        return -1;
     }
 
-    return 0;
-
+    return ret;
 }
 
 /***
@@ -350,7 +356,7 @@ SSIndex* SSTable::get_index(void) {
  *  Exposes the filename of the SSTable for merging purposes
  *
  ***/
-char* SSTable::get_filename(void) {
+string SSTable::get_filename(void) {
     return _filename;
 }
 
@@ -371,8 +377,8 @@ int SSTable::merge_older_table(SSTable *old_table) {
     //Merge the two indices together and update offset of every old index entry
     old_index->merge_newer_index(_index, _size);
 
-    op.open(_filename, std::fstream::app);
-    ip.open(old_table->get_filename(), std::ofstream::binary);
+    op.open(_filename.c_str(), std::fstream::app);
+    ip.open(old_table->get_filename().c_str(), std::ofstream::binary);
 
     if(!ip.is_open() || !op.is_open()) {
         return -1;
