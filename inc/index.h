@@ -1,21 +1,7 @@
 #ifndef SSINDEX_H
 #define SSINDEX_H
 
-#include <string>
-#include <map>
 
-#include "BloomFilter.h"
-
-/*
- *  Entry in the index that represents the metadata for the k->v pair
- */
-typedef struct {
-
-    int  offset;
-    int  len;
-    bool valid;
-
-} index_entry_t;
 
 
 /*
@@ -37,8 +23,9 @@ public:
     index_entry_t *lookup(std::string);
     void map(std::string, int, int);
     void erase(std::string); //Actually remove the key from this map
-    void invalidate(std::string); //set 'valid=false' on the entry
-    int  merge_newer_index(SSIndex*, int);
+    int consume_index(SSIndex*);
+
+    std::map<std::string, index_entry_t*>::iterator gen_iter();
 
 };
 

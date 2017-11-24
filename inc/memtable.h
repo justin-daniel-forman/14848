@@ -2,8 +2,7 @@
 #define MEMTABLE_H
 
 #include <string>
-
-#include "SSIndex.h"
+#include <map>
 
 #define PAGE_SIZE 4096
 
@@ -14,8 +13,9 @@ class Memtable {
 
 private:
     std::string _name;
-    std::string _data;
-    SSIndex *_index;
+    std::map<std::string, std::string> _map;
+    std::map<std::string, std::string>::iterator _iter;
+    int _size;
 
 public:
 
@@ -25,9 +25,8 @@ public:
     std::string read(std::string);
     int write(std::string, std::string);
     void del(std::string);
-    const char *get_data(void);
-    SSIndex *get_index(void);
 
+    std::map<std::string, std::string> get_map();
 };
 
 #endif /* MEMTABLE_H */

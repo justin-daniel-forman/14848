@@ -3,7 +3,7 @@
 #include <string>
 
 //User defined libraries
-#include "inc/Column.h"
+#include "inc/column.h"
 
 using namespace std;
 
@@ -15,33 +15,28 @@ int main() {
     Column col0("col0", 0);
     col0.read("foo");
 
-    Memtable table0("mtable0");
-    table0.write("key", "****LKIJ:LK;kllellldllakdkfja;lkelkj***");
-    table0.write("foo", "bar");
-    table0.write("forman", "forman");
-    table0.write("mark", "wubbs");
-    table0.write("old_only", "unique_old");
-    table0.read("key");
-    table0.read("foo");
-    table0.del("foo");
-    table0.read("foo");
-
-    Memtable table1("mtable1");
-    table1.write("key", "new0");
-    table1.write("foo", "new1");
-    table1.write("forman", "new2");
-    table1.write("mark", "new3");
-    table1.write("new_only", "unique_new");
+    Memtable mtable0("mtable0");
+    mtable0.write("1", "line1\t");
+    mtable0.write("2", "line2\t");
+    mtable0.write("3", "line3\t");
+    mtable0.write("4", "line4\t");
+    mtable0.write("5", "line5\t");
+    mtable0.write("3", "stew3\t");
+    mtable0.write("2", "stew2\t");
 
     //char result[4096];
-    SSTable sstable0("sstable0", table0.get_index(), table0.get_data());
-    SSTable sstable1("sstable1", table1.get_index(), table1.get_data());
+    SSTable sstable0("sstable0", mtable0.get_map());
+
+    std::string ret;
+    ret = sstable0.read("1");
+    cout << "We got: [" << ret << "]" << std::endl;
+    ret = sstable0.read("5");
+    cout << "We got: [" << ret << "]" << std::endl;
 
     //sstable1.merge_older_table(&sstable0);
 
 
     //if(sstable1.read("mark", result) >= 0) {
-    //    cout << "We got: " << result << std::endl;
     //}
 
     //if(sstable1.read("new_only", result) >= 0) {

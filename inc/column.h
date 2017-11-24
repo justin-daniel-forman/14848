@@ -4,8 +4,8 @@
 #include <deque>
 #include <string>
 
-#include "Memtable.h"
-#include "SSTable.h"
+#include "memtable.h"
+#include "disktable.h"
 
 /*
  *  Keeps track of attributes in our NoSQL Database
