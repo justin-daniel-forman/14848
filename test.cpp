@@ -7,6 +7,7 @@
 //User defined libraries
 #include "inc/column.h"
 #include "inc/testcolumn.h"
+#include "inc/columnfamily.h"
 
 using namespace std;
 
@@ -53,7 +54,21 @@ int main() {
     cout << "Goodbye!" << std::endl;
 
     Test_Column tc(0);
-    tc.random_test(10, 0, 0);
+    tc.random_test(1, 0, 0);
+
+    std::set<std::string> column_names = {"ca", "cb", "cc"};
+    Column_Family cf(&column_names, 0);
+
+    std::map<std::string, std::string> entry;
+    entry["ca"] = "a";
+    entry["cb"] = "b";
+    entry["cc"] = "c";
+
+    cf.cf_insert("d", &entry);
+
+
+    Search_Result sr;
+    cf.cf_select(&sr, "a", "z");
 
     return 0;
 
@@ -129,7 +144,8 @@ int Test_Column::random_test(int num_small, int num_med, int num_large) {
         vstr = _col->read(_iter->first);
         if(vstr != _iter->second) {
             cout << "Test Failed!" << std::endl;
-            cout << "Actual: " << _iter->second << " Observed: " << vstr << std::endl;
+            cout << "Actual: " << _iter->second << std::endl;
+            cout << "Observed: " << vstr << std::endl;
             return -1;
         }
 
