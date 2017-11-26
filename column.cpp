@@ -14,6 +14,9 @@
 #include <fstream>
 #include <string.h>
 
+//#define NDEBUG
+#include <cassert>
+
 #include "inc/column.h"
 
 using namespace std;
@@ -23,27 +26,123 @@ using namespace std;
  *****************************************************************************/
 
 Column::Column (string name, int comp_opt) {
+    _uuid = 0;
     _name = name;
-    _mtable = new Memtable(name.append("_mtable"));
+    _compression = comp_opt;
+
+    _mtable = new Memtable("mtable_" + _name + to_string(_uuid++));
+
     cout << "Creating " << _name << std::endl;
 }
 
 
 Column::~Column() {
     delete _mtable;
+
+    _ronly_list.clear();
 }
 
 
 string Column::read (string key) {
-    return _mtable->read(key);
+    string ret;
+
+    if (ret.empty()) {
+        //Read from memtable
+        lock_guard<mutex> lock(_mtable_lock);
+        ret = _mtable->read(key);
+
+    } if (ret.empty()) {
+        //Read from secondary RONLY memtables
+        lock_guard<mutex> lock(_ronly_lock);
+
+        for (auto& ronly_iter: _ronly_list) {
+
+            ret = ronly_iter->read(key);
+            if (!ret.empty()) {
+                return ret;
+            }
+        }
+
+    } if (ret.empty()) {
+        //Step thru the SST stack and try there
+        lock_guard<mutex> lock(_sst_lock);
+
+        for (auto& sst_iter: _sst_list) {
+
+            ret = sst_iter->read(key);
+            if (!ret.empty()) {
+                return ret;
+            }
+        }
+    }
+
+    return ret;
 }
 
 void Column::write (string key, string value) {
-    _mtable->write(key, value);
+
+    int err;
+
+    lock_guard<mutex> mem_table_lock(_mtable_lock);
+
+    err = _mtable->write(key, value);
+
+    if (err) { //This memtable is full...
+
+        lock_guard<mutex> ronly_table_lock(_ronly_lock);
+
+
+        //Move the full table to the ronly reference stack
+        _ronly_list.push_front(_mtable);
+
+        //Make new memtable
+        _mtable = new Memtable("mtable_" + _name + to_string(_uuid++));
+
+        //Try the write again
+        err = _mtable->write(key, value);
+        assert(!err);
+
+        if (_ronly_list.size() > 10) {
+
+            Memtable *oldest_table = _ronly_list.back();
+            _ronly_list.pop_back();
+
+            lock_guard<mutex> sst_lock(_sst_lock);
+            SSTable *new_table = new SSTable(
+                                    "sst_" + _name + to_string(_uuid++),
+                                    oldest_table->get_map(),
+                                    0);
+
+            _sst_list.push_front(new_table);
+
+        }
+    }
+
 }
 
+//Blindly delete or invalidate ALL mappings to this particular key
 void Column::del (string key) {
+
+    //Delete from memtable
+    _mtable_lock.lock();
     _mtable->del(key);
+    _mtable_lock.unlock();
+
+    //Delete from RONLY tables
+    _ronly_lock.lock();
+    for (auto& ronly_iter: _ronly_list) {
+
+        ronly_iter->del(key);
+    }
+    _ronly_lock.unlock();
+
+    //Invalidate in all SSTables
+    _sst_lock.lock();
+    for (auto& sst_iter: _sst_list) {
+        //Blindly invalidate for all SSTs
+        sst_iter->invalidate(key);
+    }
+    _sst_lock.unlock();
 
 }
 
@@ -69,16 +168,15 @@ Memtable::~Memtable(void) {
 
 int Memtable::write (string key, string value) {
 
+    //FIXME - revisit
     if (_size + value.length() <= PAGE_SIZE) {
 
         _map[key] = value;
-
+        _size += value.length();
         return 0;
 
-
     } else {
-        //FIXME - implement still
-        cout << "STIL NEED TO IMPLEMENT SPILL TO DISK...\n";
+        //Fail out, let the column deal with it
         return -1;
     }
 
@@ -99,12 +197,14 @@ string Memtable::read (string key) {
 
 }
 
-//Does not hard remove anything. Merely suggests the data is removed
-//by setting the valid bit in the index to false
 void Memtable::del (string key) {
 
-    _map.erase(key);
+    _iter = _map.find(key);
+    if (_iter != _map.end()) {
 
+        _size -= _iter->second.length();
+        _map.erase(key);
+    }
 }
 
 map<string, string> Memtable::get_map(void) {
@@ -315,10 +415,8 @@ int SSTable::append_data_block(string data,
     ofstream outfile;
     long data_length = data.length();
 
-    cout << "Got this block to append:[" << data << "]" <<std::endl;
-
     if (compression_opt != _compression_type) {
-        cout <<"ERROR: cant append data  with different compression type!\n";
+        cout <<"ERROR: cant merge data with different compression type!\n";
         return -1;
     }
 

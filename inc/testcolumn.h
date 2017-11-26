@@ -21,7 +21,7 @@ private:
 public:
     int random_test(int, int, int);
     void generate_rand_string(char*, int);
-    Test_Column(int);
+    Test_Column(int = 0);
     ~Test_Column();
 
 };

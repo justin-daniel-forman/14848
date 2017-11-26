@@ -31,7 +31,7 @@ private:
 
 public:
     SSTable(std::string name,
-            std::map<std::string, std::string> memtable,
+            std::map<std::string, std::string> memtable_map,
             int compress_opt = 0);
     ~SSTable(void);
 
