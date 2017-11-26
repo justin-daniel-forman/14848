@@ -29,8 +29,8 @@ public:
     std::string aggregate(std::string, std::string, std::string,
         std::string (*agg)(std::string, std::string));
 
-    int convert(Search_Result*, std::string, std::string,
-        std::string (*conv)(std::string));
+    int cross(Search_Result*, std::string, std::string, std::string,
+        std::string (*cross)(std::string, std::string));
 
 };
 

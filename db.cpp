@@ -215,17 +215,27 @@ std::string DB::aggregate(std::string cf_name, std::string col_name,
  *  Analytic operation to map a column to some data in the view produced.
  *
  ***/
-int DB::convert(Search_Result *sr, std::string cf_name, std::string col_name,
-    std::string (*conv)(std::string)) {
+int DB::cross(Search_Result *sr, std::string cf_name, std::string col_a,
+    std::string col_b, std::string (*cross)(std::string, std::string)) {
 
+    std::string first;
+    std::string second;
     int st;
-    std::set <std::string> col_set = {col_name};
+
+    std::set <std::string> col_set = {col_a, col_b};
     st = this->select(sr, cf_name, "", "", &col_set);
 
     //Apply the comparison function to each of the values to find out the max
     for (auto& row_iter : sr->_table) {
-        row_iter.second->front() = conv(row_iter.second->front());
+        first = row_iter.second->front();
+        row_iter.second->pop_front();
+        second = row_iter.second->front();
+        row_iter.second->pop_front();
+
+        row_iter.second->push_front(cross(first, second));
     }
+
+    sr->_col_names.pop_back();
 
     return st;
 

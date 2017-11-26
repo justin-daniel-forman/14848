@@ -14,7 +14,7 @@ using namespace std;
 
 int cmp (std::string, std::string);
 std::string agg(std::string, std::string);
-std::string conv(std::string);
+std::string cross(std::string, std::string);
 
 int main() {
 
@@ -124,7 +124,7 @@ int main() {
     string sum = db.aggregate("foobar", "cb", "z", agg);
     std::cout << "SUM VALUE IS: " << sum << std::endl;
 
-    db.convert(&sr, "foobar", "cb", conv);
+    db.cross(&sr, "foobar", "ca", "cb", cross);
     sr.print_result();
 
     return 0;
@@ -147,8 +147,8 @@ std::string agg(std::string a, std::string b) {
 
 }
 
-std::string conv(std::string a) {
-    return a.append("f");
+std::string cross(std::string a, std::string b) {
+    return a.append(b);
 }
 
 /*****************************************************************************
