@@ -98,6 +98,7 @@ int DB::join(Search_Result *sr, std::set<std::string> *tables, std::string pcol)
     std::set<std::string>::iterator table_iter;
     std::string curr_cf_name;
     Search_Result temp_result;
+    std::set <std::string> empty_set;
 
     //Check that user has allocated space for result
     if(sr == NULL) {
@@ -105,7 +106,7 @@ int DB::join(Search_Result *sr, std::set<std::string> *tables, std::string pcol)
     }
 
     //Use the keys from the primary column to pull out rows from all of the;
-    if(this->select(sr, pcol, "", "") < 0) {
+    if(this->select(sr, pcol, "", "", &empty_set) < 0) {
         return -1;
     }
 
@@ -115,7 +116,7 @@ int DB::join(Search_Result *sr, std::set<std::string> *tables, std::string pcol)
     while(table_iter != tables->end()) {
 
         //Error out if there was a problem getting the data
-        if(this->select(&temp_result, *table_iter, "", "") < 0) {
+        if(this->select(&temp_result, *table_iter, "", "", &empty_set) < 0) {
             return -1;
         }
 
@@ -137,7 +138,8 @@ int DB::join(Search_Result *sr, std::set<std::string> *tables, std::string pcol)
  *  operation.
  *
  ***/
-int DB::select(Search_Result *sr, std::string cf, std::string min, std::string max) {
+int DB::select(Search_Result *sr, std::string cf, std::string min,
+    std::string max, std::set<std::string> *col_names) {
 
     std::map<std::string, Column_Family*>::iterator cf_iter;
 
@@ -153,7 +155,33 @@ int DB::select(Search_Result *sr, std::string cf, std::string min, std::string m
     }
 
     //Perform the select from the indicated column family
-    return (cf_iter->second)->cf_select(sr, min, max);
+    return (cf_iter->second)->cf_select(sr, min, max, col_names);
+
+}
+
+/***
+ *
+ *  Analytic operation to find the maximum value in an entire column
+ *
+ ***/
+std::string DB::max(std::string cf_name, std::string col_name,
+    std::string base, int (*cmp) (std::string, std::string)) {
+
+    std::string max_val = base;
+
+    //Pull out the values for an entire column
+    Search_Result sr;
+    std::set <std::string> col_set = {col_name};
+    this->select(&sr, cf_name, "", "", &col_set);
+
+    //Apply the comparison function to each of the values to find out the max
+    for (auto& row_iter : sr._table) {
+        if(cmp(max_val, row_iter.second->front()) < 0)  {
+            max_val = row_iter.second->front();
+        }
+    }
+
+    return max_val;
 
 }
 
@@ -335,7 +363,8 @@ Column_Family::~Column_Family(void) {
  *  the lower or upper bound of the keyspace respectively.
  *
  ***/
-int Column_Family::cf_select(Search_Result *r, std::string min, std::string max) {
+int Column_Family::cf_select(Search_Result *r,
+    std::string min, std::string max, std::set<std::string> *col_names) {
 
     std::set <std::string>::iterator lb;
     std::set <std::string>::iterator ub;
@@ -360,6 +389,13 @@ int Column_Family::cf_select(Search_Result *r, std::string min, std::string max)
         _col_iter = _cols.begin();
 
         while(_col_iter != _cols.end()) {
+
+            //Skip this column if not selected
+            if((col_names->size() > 0)
+                && col_names->find(_col_iter->first) == col_names->end()) {
+                _col_iter++;
+                continue;
+            }
 
             //record the columns exactly once
             if(_idx_iter == lb) {

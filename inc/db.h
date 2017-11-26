@@ -17,9 +17,14 @@ public:
 
     int new_column_family(std::string, std::set<std::string>*, int);
     int join(Search_Result*, std::set<std::string>*, std::string);
-    int select(Search_Result*, std::string, std::string, std::string);
+    int select(Search_Result*, std::string, std::string, std::string,
+        std::set<std::string>*);
     int insert(std::string, std::string, std::map<std::string, std::string>*);
     int del(std::string, std::string);
+
+    //Analytics functions
+    std::string max(std::string, std::string, std::string base,
+        int (*cmp)(std::string, std::string));
 
 };
 
