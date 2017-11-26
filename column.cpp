@@ -38,7 +38,6 @@ Column::~Column() {
 string Column::read (string key) {
 
     string ret = "foo";
-    cout <<  _name << " read (" << key << ":" << ret << ")\n";
     return ret;
 }
 
@@ -83,7 +82,6 @@ int Memtable::write (string key, string value) {
 
         _map[key] = value;
 
-        cout << _name << " wrote [" << key << ":" << value << "]\n";
         return 0;
 
 
@@ -104,7 +102,6 @@ string Memtable::read (string key) {
     if (_iter != _map.end()) {
 
         ret = _iter->second;
-        cout << _name << " read [" << key << ":" << ret << "]\n";
 
     }
     return ret;
@@ -115,13 +112,11 @@ string Memtable::read (string key) {
 //by setting the valid bit in the index to false
 void Memtable::del (string key) {
 
-    if (_map.erase(key)) {
-        cout << _name << " deleted: " << key << std::endl;
-    }
+    _map.erase(key);
 
 }
 
-std::map<std::string, std::string> Memtable::get_map(void) {
+map<string, string> Memtable::get_map(void) {
     return _map;
 }
 /*****************************************************************************
@@ -136,16 +131,20 @@ std::map<std::string, std::string> Memtable::get_map(void) {
  *  map:  A <key:value> map inherited from a memtable
  *
  ***/
-SSTable::SSTable(string uuid, map<string, string> map) {
+SSTable::SSTable(string uuid,
+                 map<string, string> data_map,
+                 int compress_opt) {
 
     ofstream outfile;
+    string key, key_header, data;
+    long length, offset;
 
     //SST inherits a Memtables map
     _name = uuid;
     _filename = uuid;
+    _file_len = 0;
+    _compression_type = compress_opt;
 
-    string key, key_header, data;
-    long length, offset;
     cout << "Creating " << _name << std::endl;
 
     //Open the file as append only
@@ -154,10 +153,10 @@ SSTable::SSTable(string uuid, map<string, string> map) {
     if(outfile.is_open()) {
 
         //Write each entry to the file, save a mapping in our index
-        for (auto& iter: map) {
+        for (auto& iter: data_map) {
 
             key.assign(iter.first);
-            key_header.assign("<" + key + ">");
+            key_header.assign(key + "\n");
             data.assign(iter.second + "\n");
             length = data.length();
 
@@ -180,6 +179,9 @@ SSTable::SSTable(string uuid, map<string, string> map) {
                 cout <<"ERROR: writing: " << key << "to " << _name <<std::endl;
             }
         }
+
+        //Save the file length
+        _file_len = outfile.tellp();
 
         //Close the file
         outfile.close();
@@ -206,6 +208,23 @@ SSTable::~SSTable(void) {
     return;
 }
 
+/*
+ *
+ */
+void SSTable::invalidate(string key) {
+
+    _iter = _index.find(key);
+    if (_iter != _index.end()) {
+        _iter->second->valid = false;
+    }
+}
+
+/*
+ *
+ */
+long SSTable::get_file_len() {
+    return _file_len;
+}
 
 /***
  *
@@ -215,7 +234,7 @@ SSTable::~SSTable(void) {
  *  the index before opening the file.
  *
  ***/
-string SSTable::read(std::string key) {
+string SSTable::read(string key) {
 
     string ret;
     long offset;
@@ -234,11 +253,6 @@ string SSTable::read(std::string key) {
 
             infile.seekg(offset);
 
-            //char *buf = new char[len];
-            //infile.readsome(ret.buf, len);
-            //ret.assign(buf);
-            //delete buf;
-
             std::getline(infile, ret);
 
             if(!infile.good()) {
@@ -251,42 +265,89 @@ string SSTable::read(std::string key) {
     return ret;
 }
 
+bool SSTable::peek(string key) {
 
+    _iter = _index.find(key);
+
+    return (_iter != _index.end());
+
+}
 /***
  *
  *  Merges two SSTables together into one file on disk
  *
- *  This involves merging the two indices together and then just writing
- *  both of the data arrays to disk consecutively and adjusting the offsets.
- *
  ***/
-//int SSTable::merge_older_table(SSTable *old_table) {
-//
-//    ofstream op;
-//    ifstream ip;
-//    SSIndex  *old_index = old_table->get_index();
-//
-//    //Merge the two indices together and update offset of every old index entry
-//    old_index->merge_newer_index(_index, _size);
-//
-//    op.open(_filename.c_str(), std::fstream::app);
-//    ip.open(old_table->get_filename().c_str(), std::ofstream::binary);
-//
-//    if(!ip.is_open() || !op.is_open()) {
-//        return -1;
-//    }
-//
-//    op << ip.rdbuf();
-//    op.close();
-//    ip.close();
-//
-//    if(!ip || !op) {
-//        return -1;
-//    }
-//
-//    return 0;
-//}
+int SSTable::merge_into_table(SSTable new_table, long table_offset) {
 
+    string new_block, data_key, data;
+    long rel_offset, local_offset, data_len;
+    map<string, index_entry_t*> new_map;
+
+    ifstream infile(_filename.c_str());
+
+    for (_iter = _index.begin(); _iter != _index.end(); _iter++) {
+
+        //  key is not already in new table ---- key has valid entry
+        if ((!new_table.peek(_iter->first)) and (_iter->second->valid)) {
+            //Found an entry to add!
+            data_key = _iter->first;
+            data_len = _iter->second->len;
+            local_offset = _iter->second->offset;
+
+            //Read data from local file
+            infile.seekg(local_offset);
+            std::getline(infile, data);
+
+            //Write to data block
+            new_block.append(data_key + "\n");
+            rel_offset = new_block.length();
+            new_block.append(data + "\n");
+
+            //Add entry to map
+            index_entry_t *new_entry = new index_entry_t;
+            new_entry->offset = table_offset + rel_offset;
+            new_entry->len = data_len;
+            new_entry->valid = true;
+            new_map[data_key] = new_entry;
+
+        }
+    }
+
+    //Instruct the newer table to add the new made block of data
+    return new_table.append_data_block(new_block, new_map, _compression_type);
+}
+
+int SSTable::append_data_block(string data,
+                               map<string, index_entry_t*> new_index,
+                               int compression_opt) {
+
+    ofstream outfile;
+    long data_length = data.length();
+
+    cout << "Got this block to append:[" << data << "]" <<std::endl;
+
+    if (compression_opt != _compression_type) {
+        cout <<"ERROR: cant append data  with different compression type!\n";
+        return -1;
+    }
+
+    outfile.open(_name.c_str(), ofstream::app);
+    outfile.write(data.c_str(), data_length);
+    outfile.close();
+
+    _file_len = outfile.tellp();
+
+    if (!outfile.good()) {
+        //FIXME - Actually clean up........
+        cout <<"ERROR: could not append data block for " << _name<<std::endl;
+        return -1;
+
+    }
+
+    _index.insert(new_index.begin(), new_index.end());
+
+    return 0;
+}
 /*****************************************************************************
  *                                  BloomFilter                              *
  *****************************************************************************/
