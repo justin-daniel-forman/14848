@@ -69,6 +69,7 @@ int main() {
 
     Search_Result sr;
     cf.cf_select(&sr, "a", "z");
+    sr.print_result();
 
     return 0;
 

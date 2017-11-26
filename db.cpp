@@ -2,6 +2,7 @@
 #include <string>
 #include <map>
 #include <set>
+#include <list>
 
 #include "inc/columnfamily.h"
 
@@ -9,13 +10,62 @@
  *                             SEARCH RESULT                                 *
  *****************************************************************************/
 
-void Search_Result::add_row(std::set <std::string> *row) {
-    //TODO
+Search_Result::~Search_Result(void) {
+    std::map <std::string, std::list<std::string>*>::iterator kv;
+
+    kv = _table.begin();
+    while(kv != _table.end()) {
+        delete kv->second;
+        kv++;
+    }
+
+}
+
+void Search_Result::add_row(std::string key, std::list <std::string> *row) {
+
+    _table[key] = row;
+
     return;
+
+}
+
+void Search_Result::add_col(std::string col) {
+    _col_names.push_back(col);
+
 }
 
 void Search_Result::print_result(void) {
-    //TODO
+
+    std::map <std::string, std::list<std::string>* >::iterator miter;
+    std::list <std::string>::iterator siter;
+
+    //Print out column names
+    std::cout << "\t| ";
+    siter = _col_names.begin();
+    while(siter != _col_names.end()) {
+        std::cout << *siter << "\t| ";
+        siter++;
+    }
+    std::cout << std::endl;
+
+
+    //Print out row
+    miter = _table.begin();
+    while(miter != _table.end()) {
+
+        std::cout << miter->first << "\t| ";
+
+        siter = miter->second->begin();
+        while(siter != miter->second->end()) {
+            std::cout << *siter << "\t| ";
+            siter++;
+        }
+        std::cout << std::endl;
+
+
+        miter++;
+    }
+
     return;
 }
 
@@ -75,7 +125,7 @@ int Column_Family::cf_select(Search_Result *r, std::string min, std::string max)
 
     std::set <std::string>::iterator lb;
     std::set <std::string>::iterator ub;
-    std::set <std::string> results;
+    std::list <std::string> *results;
 
     //Check that user has allocated space for the result
     if(r == NULL) {
@@ -89,17 +139,23 @@ int Column_Family::cf_select(Search_Result *r, std::string min, std::string max)
     while(_idx_iter != ub) {
 
         //Retrieve the value from each of the columns
-        results.clear();
+        results = new std::list<std::string>;
         _col_iter = _cols.begin();
 
-        //FIXME: Actually add to the search result
         while(_col_iter != _cols.end()) {
-            std::cout << _col_iter->second->read(*_idx_iter) << std::endl;
+
+            //record the columns exactly once
+            if(_idx_iter == lb) {
+                r->add_col(_col_iter->first);
+            }
+
+            //gather the entry from each column
+            results->push_back(_col_iter->second->read(*_idx_iter));
             _col_iter++;
         }
 
         //Add the results to the search result
-        r->add_row(&results);
+        r->add_row(*_idx_iter, results);
 
         _idx_iter++;
     }

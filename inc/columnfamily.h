@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <list>
 
 #include "column.h"
 
@@ -15,11 +16,15 @@
 class Search_Result {
 
 private:
-    std::map <std::string, std::set<std::string>> _table;
+    std::map <std::string, std::list<std::string>*> _table;
+    std::list <std::string> _col_names;
 
 public:
-    void add_row(std::set <std::string>*);
+    void add_row(std::string, std::list<std::string>*);
+    void add_col(std::string);
     void print_result(void);
+
+    ~Search_Result();
 
 };
 
