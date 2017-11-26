@@ -23,22 +23,28 @@ class SSTable {
 private:
     std::string _name;
     std::string _filename;
-
-    bool _valid; //Hacky error handling for now
+    long _file_len;
+    int _compression_type;
 
     std::map<std::string, index_entry_t*> _index;
     std::map<std::string, index_entry_t*>::iterator _iter;
 
 public:
-    SSTable(std::string name, std::map<std::string, std::string> memtable);
+    SSTable(std::string name,
+            std::map<std::string, std::string> memtable,
+            int compress_opt = 0);
     ~SSTable(void);
 
-    //Reads the associated value if key is mapped
     std::string read(std::string);
-    void invalidate(std::string); //set 'valid=false' on the entry
+    bool peek(std::string);
+    void invalidate(std::string);
+    long get_file_len();
 
-    //Called on the newer one with a pointer to the older one
-    int merge_older_table(SSTable*);
+    int merge_into_table(SSTable, long);
+    int append_data_block(std::string,
+                          std::map<std::string, index_entry_t*>,
+                          int);
+
 
 };
 
