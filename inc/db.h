@@ -23,8 +23,14 @@ public:
     int del(std::string, std::string);
 
     //Analytics functions
-    std::string max(std::string, std::string, std::string base,
+    std::string compare(std::string, std::string, std::string,
         int (*cmp)(std::string, std::string));
+
+    std::string aggregate(std::string, std::string, std::string,
+        std::string (*agg)(std::string, std::string));
+
+    int convert(Search_Result*, std::string, std::string,
+        std::string (*conv)(std::string));
 
 };
 

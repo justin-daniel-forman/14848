@@ -12,6 +12,9 @@
 
 using namespace std;
 
+int cmp (std::string, std::string);
+std::string agg(std::string, std::string);
+std::string conv(std::string);
 
 int main() {
 
@@ -115,8 +118,37 @@ int main() {
     db.join(&sr, &cf_names, "foobar");
     sr.print_result();
 
+    string max = db.compare("foobar", "cb", "a", cmp);
+    std::cout << "MAX VALUE IS: " << max << std::endl;
+
+    string sum = db.aggregate("foobar", "cb", "z", agg);
+    std::cout << "SUM VALUE IS: " << sum << std::endl;
+
+    db.convert(&sr, "foobar", "cb", conv);
+    sr.print_result();
+
     return 0;
 
+}
+
+int cmp(std::string a, std::string b) {
+    if(a < b) {
+        return -1;
+    } else if(a == b) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
+std::string agg(std::string a, std::string b) {
+
+    return a.append(b);
+
+}
+
+std::string conv(std::string a) {
+    return a.append("f");
 }
 
 /*****************************************************************************

@@ -161,10 +161,11 @@ int DB::select(Search_Result *sr, std::string cf, std::string min,
 
 /***
  *
- *  Analytic operation to find the maximum value in an entire column
+ *  Analytic operation to find a value in a column. This can be used
+ *  to pick out the min, max, or any other specific point.
  *
  ***/
-std::string DB::max(std::string cf_name, std::string col_name,
+std::string DB::compare(std::string cf_name, std::string col_name,
     std::string base, int (*cmp) (std::string, std::string)) {
 
     std::string max_val = base;
@@ -182,6 +183,51 @@ std::string DB::max(std::string cf_name, std::string col_name,
     }
 
     return max_val;
+}
+
+/***
+ *
+ *  Analytic operation to find out aggregate value for a column. This is
+ *  essentially a reduce.
+ *
+ ***/
+std::string DB::aggregate(std::string cf_name, std::string col_name,
+    std::string base, std::string (*agg) (std::string, std::string)) {
+
+    std::string sum = base;
+
+    //Pull out the values for an entire column
+    Search_Result sr;
+    std::set <std::string> col_set = {col_name};
+    this->select(&sr, cf_name, "", "", &col_set);
+
+    //Apply the comparison function to each of the values to find out the max
+    for (auto& row_iter : sr._table) {
+        sum = agg(sum, row_iter.second->front());
+    }
+
+    return sum;
+
+}
+
+/***
+ *
+ *  Analytic operation to map a column to some data in the view produced.
+ *
+ ***/
+int DB::convert(Search_Result *sr, std::string cf_name, std::string col_name,
+    std::string (*conv)(std::string)) {
+
+    int st;
+    std::set <std::string> col_set = {col_name};
+    st = this->select(sr, cf_name, "", "", &col_set);
+
+    //Apply the comparison function to each of the values to find out the max
+    for (auto& row_iter : sr->_table) {
+        row_iter.second->front() = conv(row_iter.second->front());
+    }
+
+    return st;
 
 }
 
