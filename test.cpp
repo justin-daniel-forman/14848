@@ -58,8 +58,8 @@ int main() {
 
     cout << "Goodbye!" << std::endl;
 
-    Test_Column tc(0);
-    tc.random_test(1, 0, 0);
+    //Test_Column tc(0);
+    //tc.random_test(1, 0, 0);
 
 
     //Try out Column Family Implementation
@@ -103,6 +103,11 @@ int main() {
     db.select(&sr, "mark", "", "");
     sr.print_result();
 
+    std::cout << "\n\n\n";
+    db.join(&sr, &cf_names, "foobar");
+    sr.print_result();
+
+    db.del("foobar", "d");
     std::cout << "\n\n\n";
     db.join(&sr, &cf_names, "foobar");
     sr.print_result();

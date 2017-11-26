@@ -30,31 +30,22 @@ Column::Column (string name, int comp_opt) {
 
 
 Column::~Column() {
-    //FIXME
-    //delete _mtable;
+    delete _mtable;
 }
 
 
 string Column::read (string key) {
-
-    string ret = "foo";
-    return ret;
+    return _mtable->read(key);
 }
 
 void Column::write (string key, string value) {
+    _mtable->write(key, value);
 }
 
 void Column::del (string key) {
+    _mtable->del(key);
+
 }
-
-//int Column::merge_sst(SSTable *curr_table, SSTable *old_table) {
-//
-//    SSIndex old_index = old_table->get_index();
-//    string old_file_name = old_table->get_filename();
-//    
-//}
-
-
 
 /*****************************************************************************
  *                                  MemTable                                 *

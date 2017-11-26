@@ -19,6 +19,7 @@ public:
     int join(Search_Result*, std::set<std::string>*, std::string);
     int select(Search_Result*, std::string, std::string, std::string);
     int insert(std::string, std::string, std::map<std::string, std::string>*);
+    int del(std::string, std::string);
 
 };
 

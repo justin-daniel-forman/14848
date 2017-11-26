@@ -66,6 +66,25 @@ int DB::insert(std::string cf_name, std::string row_key,
 
 }
 
+/***
+ *
+ * Delete a row out of a column family
+ *
+ ***/
+int DB::del(std::string cf_name, std::string row_key) {
+
+    std::map<std::string, Column_Family*>::iterator cf_iter;
+
+    //Check that a column family of this name does not already exist
+    cf_iter = _cf_map.find(cf_name);
+    if(cf_iter == _cf_map.end()) {
+        return -1;
+    }
+
+    return (cf_iter->second)->cf_delete(row_key);
+
+}
+
 
 /***
  *
@@ -142,6 +161,12 @@ int DB::select(Search_Result *sr, std::string cf, std::string min, std::string m
  *                             SEARCH RESULT                                 *
  *****************************************************************************/
 
+/***
+ *
+ *  Destructor makes sure to delete all of the lists created to hold
+ *  data.
+ *
+ ***/
 Search_Result::~Search_Result(void) {
     std::map <std::string, std::list<std::string>*>::iterator kv;
 
@@ -191,7 +216,6 @@ void Search_Result::merge(Search_Result *new_result) {
 
         //The key does not exist in the new table, so insert 0ed out vals
         if(newi == new_result->_table.end()) {
-            std::cout << "BLAH\n";
             for(int i = 0; i < ncols; i++) {
                 oldi->second->push_back("N/A");
             }
@@ -219,6 +243,11 @@ void Search_Result::add_col(std::string col) {
 
 }
 
+/***
+ *
+ *  Simple visualization of a search result in row format
+ *
+ ***/
 void Search_Result::print_result(void) {
 
     std::map <std::string, std::list<std::string>* >::iterator miter;
@@ -410,6 +439,10 @@ int Column_Family::cf_delete(std::string key) {
 
     for(auto& kv : _cols) {
         kv.second->del(key);
+    }
+
+    if(_idx.erase(key) <= 0) {
+        return -1;
     }
 
     return 0;
