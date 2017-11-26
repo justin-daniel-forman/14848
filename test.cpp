@@ -8,6 +8,7 @@
 #include "inc/column.h"
 #include "inc/testcolumn.h"
 #include "inc/columnfamily.h"
+#include "inc/db.h"
 
 using namespace std;
 
@@ -60,6 +61,8 @@ int main() {
     Test_Column tc(0);
     tc.random_test(1, 0, 0);
 
+
+    //Try out Column Family Implementation
     std::set<std::string> column_names = {"ca", "cb", "cc"};
     Column_Family cf(&column_names, 0);
 
@@ -68,16 +71,55 @@ int main() {
     entry["cb"] = "b";
     entry["cc"] = "c";
 
+    cf.cf_insert("a", &entry);
     cf.cf_insert("d", &entry);
+    cf.cf_insert("e", &entry);
 
 
     Search_Result sr;
     cf.cf_select(&sr, "a", "z");
     sr.print_result();
+    cf.cf_select(&sr, "e", "e");
+    sr.print_result();
+
+
+    //DB implementation
+    DB db;
+    db.new_column_family("foobar", &column_names, 0);
+    db.insert("foobar", "a", &entry);
+    db.insert("foobar", "d", &entry);
+    db.insert("foobar", "e", &entry);
+    db.select(&sr, "foobar", "", "");
+    sr.print_result();
+
+    column_names = { "dc", "dd" };
+    db.new_column_family("mark", &column_names, 0);
+    entry.clear();
+    entry["dc"] = "x";
+    entry["dd"] = "y";
+    db.insert("mark", "a", &entry);
+
+    std::set<std::string> cf_names = {"mark"};
+    db.select(&sr, "mark", "", "");
+    sr.print_result();
+
+    std::cout << "\n\n\n";
+    db.join(&sr, &cf_names, "foobar");
+    sr.print_result();
 
     return 0;
 
 }
+
+/*****************************************************************************
+ *                             TEST_COLUMN_FAMILY                            *
+ *****************************************************************************/
+
+//int Test_Column_Family::random_test(int num_columns) {
+//
+//
+//}
+
 
 /*****************************************************************************
  *                             TEST_COLUMN                                   *

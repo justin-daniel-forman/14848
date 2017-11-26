@@ -5,6 +5,138 @@
 #include <list>
 
 #include "inc/columnfamily.h"
+#include "inc/db.h"
+
+/*****************************************************************************
+ *                              DB                                           *
+ *****************************************************************************/
+
+/***
+ *
+ *  Create a new column family for the database given that the parameters
+ *  are valid. A column family is representative of a traditional table.
+ *
+ ***/
+int DB::new_column_family(std::string name, std::set<std::string> *schema, int copt) {
+
+    std::map<std::string, Column_Family*>::iterator cf_iter;
+
+    //Check that a column family of this name does not already exist
+    cf_iter = _cf_map.find(name);
+    if(cf_iter != _cf_map.end()) {
+        return -1;
+    }
+
+    //Invalid column family name
+    if(name.length() == 0 ) {
+        //FIXME: Probably want some more restrictions on what you can call
+        //the column family
+        return -1;
+    }
+
+    //Column names are not specified properly
+    if(schema == NULL || schema->size() < 1) {
+        return -1;
+    }
+
+    _cf_map[name] = new Column_Family(schema, copt);
+
+    return 0;
+}
+
+
+/***
+ *
+ *  Insert a row into a column family by specifying the column->value mappings
+ *  for the row_key indicated.
+ *
+ ***/
+int DB::insert(std::string cf_name, std::string row_key,
+    std::map<std::string, std::string> *m) {
+
+    std::map<std::string, Column_Family*>::iterator cf_iter;
+
+    //Check that a column family of this name does not already exist
+    cf_iter = _cf_map.find(cf_name);
+    if(cf_iter == _cf_map.end()) {
+        return -1;
+    }
+
+    return (cf_iter->second)->cf_insert(row_key, m);
+
+}
+
+
+/***
+ *
+ *  Return a temporary view of two or more tables coalesced by primary key
+ *  specified. If an entry does not exist in one of the column families,
+ *  it is represented by the empty string.
+ *
+ ***/
+int DB::join(Search_Result *sr, std::set<std::string> *tables, std::string pcol) {
+
+    std::set<std::string>::iterator table_iter;
+    std::string curr_cf_name;
+    Search_Result temp_result;
+
+    //Check that user has allocated space for result
+    if(sr == NULL) {
+        return -1;
+    }
+
+    //Use the keys from the primary column to pull out rows from all of the;
+    if(this->select(sr, pcol, "", "") < 0) {
+        return -1;
+    }
+
+    //Select the data from each column family, and merge in the results
+    //to the existing results
+    table_iter = tables->begin();
+    while(table_iter != tables->end()) {
+
+        //Error out if there was a problem getting the data
+        if(this->select(&temp_result, *table_iter, "", "") < 0) {
+            return -1;
+        }
+
+        //Merge the results together
+        sr->merge(&temp_result);
+
+        table_iter++;
+    }
+
+    return 0;
+}
+
+
+/***
+ *
+ *  Perform an SQL like SELECT on a specific column family. We can only
+ *  specify a range of keys to perform the select on. There is a sorted
+ *  index within the Column_Family that should make that a relatively quick
+ *  operation.
+ *
+ ***/
+int DB::select(Search_Result *sr, std::string cf, std::string min, std::string max) {
+
+    std::map<std::string, Column_Family*>::iterator cf_iter;
+
+    //Check that user has allocated space for result
+    if(sr == NULL) {
+        return -1;
+    }
+
+    //Check that column family specified is a valid cf
+    cf_iter = _cf_map.find(cf);
+    if(cf_iter == _cf_map.end()) {
+        return -1;
+    }
+
+    //Perform the select from the indicated column family
+    return (cf_iter->second)->cf_select(sr, min, max);
+
+}
 
 /*****************************************************************************
  *                             SEARCH RESULT                                 *
@@ -17,6 +149,59 @@ Search_Result::~Search_Result(void) {
     while(kv != _table.end()) {
         delete kv->second;
         kv++;
+    }
+
+}
+
+/***
+ *
+ *  Ensures that a search result object is cleared out between uses
+ *
+ ***/
+void Search_Result::reset(void) {
+    _table.clear();
+    _col_names.clear();
+    return;
+}
+
+/***
+ *
+ *  Merge together two search results to represent a join operation.
+ *  This is probably a little bit inefficient to construct the second
+ *  search result, and then merge into the first one instead of adding
+ *  directly to the first one.
+ *
+ ***/
+void Search_Result::merge(Search_Result *new_result) {
+
+    int ncols;
+    std::map <std::string, std::list<std::string>*>::iterator oldi;
+    std::map <std::string, std::list<std::string>*>::iterator newi;
+
+    //add in all of the column names
+    ncols = new_result->_col_names.size();
+    _col_names.splice(_col_names.end(), new_result->_col_names);
+
+    //Coalesce the rows together
+    oldi = _table.begin();
+    while(oldi != _table.end()) {
+
+        //Locate the row in the new table by the key in the old table
+        newi = new_result->_table.find(oldi->first);
+
+        //The key does not exist in the new table, so insert 0ed out vals
+        if(newi == new_result->_table.end()) {
+            std::cout << "BLAH\n";
+            for(int i = 0; i < ncols; i++) {
+                oldi->second->push_back("N/A");
+            }
+
+        //The key exists in the new table, so merge the row
+        } else {
+            oldi->second->splice(oldi->second->end(), *(newi->second));
+        }
+
+        oldi++;
     }
 
 }
@@ -132,8 +317,11 @@ int Column_Family::cf_select(Search_Result *r, std::string min, std::string max)
         return -1;
     }
 
-    lb = _idx.lower_bound(min);
-    ub = _idx.upper_bound(max);
+    //Make sure that the result is zeroed out
+    r->reset();
+
+    lb = (min.length() == 0) ? _idx.begin() : _idx.lower_bound(min);
+    ub = (max.length() == 0) ? _idx.end()   : _idx.upper_bound(max);
 
     _idx_iter = lb;
     while(_idx_iter != ub) {

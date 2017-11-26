@@ -15,14 +15,18 @@
  ***/
 class Search_Result {
 
-private:
+public:
     std::map <std::string, std::list<std::string>*> _table;
     std::list <std::string> _col_names;
 
-public:
+    std::map <std::string, std::list<std::string>*>::iterator _table_iter;
+    std::list <std::string>::iterator _col_names_iter;
+
     void add_row(std::string, std::list<std::string>*);
     void add_col(std::string);
+    void reset(void);
     void print_result(void);
+    void merge(Search_Result*);
 
     ~Search_Result();
 
