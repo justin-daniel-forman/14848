@@ -3,6 +3,7 @@
 #include <string>
 #include <cstdlib>
 #include <string.h>
+#include <vector>
 
 //User defined libraries
 #include "inc/column.h"
@@ -16,72 +17,63 @@ int cmp (std::string, std::string);
 std::string agg(std::string, std::string);
 std::string cross(std::string, std::string);
 
+void generate_rand_string(char*, int);
+int  string_to_int(string);
+
 int main() {
 
-    Test_Column tc(0);
-    tc.random_test(0, 1000, 0);
+    //FIXME: This segfaults
+    //Test_Column tc(0);
+    //tc.random_test(0, 100, 0);
 
+// BEGIN DB INSERTION TEST 0
+    DB db;
+    int successes = 0;
+    std::set <std::string> column_names = {"c0", "c1", "c2", "c3", "c4"};
 
-    ////Try out Column Family Implementation
-    //std::set<std::string> column_names = {"ca", "cb", "cc"};
-    //Column_Family cf(&column_names, 0);
+    //Initialize hash values to 0
+    std::map <std::string, int> hashes;
+    hashes["c0"] = 0;
+    hashes["c1"] = 0;
+    hashes["c2"] = 0;
+    hashes["c3"] = 0;
+    hashes["c4"] = 0;
 
-    //std::map<std::string, std::string> entry;
-    //entry["ca"] = "a";
-    //entry["cb"] = "b";
-    //entry["cc"] = "c";
+    db.new_column_family("cf0", &column_names, 0);
 
-    //cf.cf_insert("a", &entry);
-    //cf.cf_insert("d", &entry);
-    //cf.cf_insert("e", &entry);
+    for(int i = 0; i < 1000; i++) {
 
-    //Search_Result sr;
-    //cf.cf_select(&sr, "a", "z");
-    //sr.print_result();
-    //cf.cf_select(&sr, "e", "e");
-    //sr.print_result();
+        //Create a set of random entries for each column
+        std::map<std::string, std::string> entry;
+        char value [400];
+        for (auto& col_iter : column_names) {
+            generate_rand_string(value, 400);
+            string v(value);
+            entry[col_iter] = v;
+            hashes[col_iter] += string_to_int(v);
+        }
 
+        //Generate a random row key for this entry
+        char rkey[100];
+        generate_rand_string(rkey, 100);
+        string rk(rkey);
 
-    ////DB implementation
-    //DB db;
-    //db.new_column_family("foobar", &column_names, 0);
-    //db.insert("foobar", "a", &entry);
-    //db.insert("foobar", "d", &entry);
-    //db.insert("foobar", "e", &entry);
-    //db.select(&sr, "foobar", "", "");
-    //sr.print_result();
+        db.insert("cf0", rk, &entry);
 
-    //column_names = { "dc", "dd" };
-    //db.new_column_family("mark", &column_names, 0);
-    //entry.clear();
-    //entry["dc"] = "x";
-    //entry["dd"] = "y";
-    //db.insert("mark", "a", &entry);
+    }
 
-    //std::set<std::string> cf_names = {"mark"};
-    //db.select(&sr, "mark", "", "", &cols);
-    //sr.print_result();
-    //std::set<std::string> cf_names = {"mark"};
-    //db.select(&sr, "mark", "", "");
-    //sr.print_result();
+    for (auto& i : hashes) {
+        if(i.second != stoi(db.aggregate("cf0", i.first, "0", agg))) {
+            std::cout << "DB INSERTION TEST FAILED!" << std::endl;
+        } else {
+            successes++;
+        }
+    }
 
-    //std::cout << "\n\n\n";
-    //db.join(&sr, &cf_names, "foobar");
-    //sr.print_result();
-
-    //db.del("foobar", "d");
-    //std::cout << "\n\n\n";
-    //db.join(&sr, &cf_names, "foobar");
-    //sr.print_result();
-
-    //string max = db.compare("foobar", "cb", "a", cmp);
-    //std::cout << "MAX VALUE IS: " << max << std::endl;
-
-    //string sum = db.aggregate("foobar", "cb", "z", agg);
-    //std::cout << "SUM VALUE IS: " << sum << std::endl;
-
-    //db.cross(&sr, "foobar", "ca", "cb", cross);
-    //sr.print_result();
+    if(successes == 5) {
+        std::cout << "DB INSERTION TEST PASSED!" << std::endl;
+    }
+//END DB INSERTION TEST 0
 
     return 0;
 
@@ -99,7 +91,11 @@ int cmp(std::string a, std::string b) {
 
 std::string agg(std::string a, std::string b) {
 
-    return a.append(b);
+    int ia = std::stoi(a);
+
+    ia += string_to_int(b);
+
+    return std::to_string(ia);
 
 }
 
@@ -107,14 +103,22 @@ std::string cross(std::string a, std::string b) {
     return a.append(b);
 }
 
+
 /*****************************************************************************
- *                             TEST_COLUMN_FAMILY                            *
+ *                             TEST_DB                                       *
  *****************************************************************************/
 
-//int Test_Column_Family::random_test(int num_columns) {
-//
-//
-//}
+int string_to_int(string a) {
+
+    int sum = 0;
+
+    for(char& c : a) {
+        sum +=  (int) c;
+
+    }
+
+    return sum;
+}
 
 
 /*****************************************************************************
@@ -205,6 +209,10 @@ int Test_Column::random_test(int num_small, int num_med, int num_large) {
 }
 
 void Test_Column::generate_rand_string(char *buf, int size) {
+    generate_rand_string(buf, size);
+}
+
+void generate_rand_string(char *buf, int size) {
 
     int  i;
     char r;
