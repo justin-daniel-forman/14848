@@ -12,7 +12,8 @@
 #include <iostream>
 #include <cstdlib>
 #include <fstream>
-#include <string.h>
+#include <string>
+#include <thread>
 
 //#define NDEBUG
 #include <cassert>
@@ -26,11 +27,15 @@ using namespace std;
  *****************************************************************************/
 
 Column::Column (string name, int comp_opt) {
-    _uuid = 0;
-    _name = name;
-    _compression = comp_opt;
 
-    _mtable = new Memtable("mtable_" + _name + to_string(_uuid++));
+    _name = name;
+    _compression_opt = comp_opt;
+    _table_uid = 0;
+    _sst_uid = 0;
+
+    long table_id = _table_uid++;
+
+    _mtable = new Memtable(_name+"_mtable"+to_string(table_id), table_id);
 
     cout << "Creating " << _name << std::endl;
 }
@@ -39,121 +44,170 @@ Column::Column (string name, int comp_opt) {
 Column::~Column() {
     delete _mtable;
 
-    _ronly_list.clear();
+    //FIXME - moar better
+    //_tables_map.clear();
 }
 
 
 string Column::read (string key) {
+    int not_found;
     string ret;
 
-    if (ret.empty()) {
-        //Read from memtable
-        lock_guard<mutex> lock(_mtable_lock);
-        ret = _mtable->read(key);
+    unique_lock<mutex> MEM_LOCK(_mtable_lock, std::defer_lock);
+    unique_lock<mutex> TABLES_LOCK(_tables_lock, std::defer_lock);
+    unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
-    } if (ret.empty()) {
-        //Read from secondary RONLY memtables
-        lock_guard<mutex> lock(_ronly_lock);
+    //Read from memtable
+    MEM_LOCK.lock();
+    not_found = _mtable->read(key, &ret);
+    if (!not_found) return ret;
+    MEM_LOCK.unlock();
 
-        for (auto& ronly_iter: _ronly_list) {
+    //Read from secondary RONLY memtables
+    TABLES_LOCK.lock();
+    for (auto& table_iter: _tables_map) {
 
-            ret = ronly_iter->read(key);
-            if (!ret.empty()) {
-                return ret;
-            }
-        }
-
-    } if (ret.empty()) {
-        //Step thru the SST stack and try there
-        lock_guard<mutex> lock(_sst_lock);
-
-        for (auto& sst_iter: _sst_list) {
-
-            ret = sst_iter->read(key);
-            if (!ret.empty()) {
-                return ret;
-            }
-        }
+        not_found = table_iter.second->read(key, &ret);
+        if (!not_found) return ret;
     }
+    TABLES_LOCK.unlock();
+
+    //Read from the on disk SSTs
+    SST_LOCK.lock();
+    for (auto& sst_iter: _sst_map) {
+
+        not_found = sst_iter.second->read(key, &ret);
+        if (!not_found) return ret;
+    }
+    SST_LOCK.unlock();
 
     return ret;
 }
 
 void Column::write (string key, string value) {
 
-    int err;
+    int err = -1;
 
-    lock_guard<mutex> mem_table_lock(_mtable_lock);
+    unique_lock<mutex> MEM_LOCK(_mtable_lock, std::defer_lock);
+    unique_lock<mutex> TABLES_LOCK(_tables_lock, std::defer_lock);
 
+    MEM_LOCK.lock();
     err = _mtable->write(key, value);
 
-    if (err) { //This memtable is full...
+    if (err) { //The memtable is full...
 
-        lock_guard<mutex> ronly_table_lock(_ronly_lock);
+        //Move full table to our full table map
+        TABLES_LOCK.lock();
+        _tables_map[_mtable->get_uid()] = _mtable;
 
+        if (_tables_map.size() > 10) {
+            //Spawn a thread to dump one of our full tables
+            thread (&Column::dump_table_to_disk, this).detach();
+        }
 
-        //Move the full table to the ronly reference stack
-        _ronly_list.push_front(_mtable);
+        long new_table_uid = _table_uid++;
+        TABLES_LOCK.unlock();
 
         //Make new memtable
-        _mtable = new Memtable("mtable_" + _name + to_string(_uuid++));
-
+        _mtable = new Memtable("mtable_" + _name + to_string(new_table_uid),
+                               new_table_uid);
         //Try the write again
         err = _mtable->write(key, value);
         assert(!err);
+    }
 
-        if (_ronly_list.size() > 10) {
+    MEM_LOCK.unlock();
+}
 
-            Memtable *oldest_table = _ronly_list.back();
-            _ronly_list.pop_back();
+//Map an empty string to this key, thus later reads for key will return nothing
+void Column::del (string key) {
+    this->write(key, "");
 
-            lock_guard<mutex> sst_lock(_sst_lock);
-            SSTable *new_table = new SSTable(
-                                    "sst_" + _name + to_string(_uuid++),
-                                    oldest_table->get_map(),
-                                    0);
+    //unique_lock<mutex> MEM_LOCK(_mtable_lock, std::defer_lock);
+    //unique_lock<mutex> TABLES_LOCK(_tables_lock, std::defer_lock);
+    //unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
-            _sst_list.push_front(new_table);
+    ////Delete from memtable
+    //MEM_LOCK.lock();
+    //_mtable->del(key);
+    //MEM_LOCK.unlock();
 
+    ////Delete from RONLY tables
+    //TABLES_LOCK.lock();
+    //for (auto& iter: _tables_map) {
+
+    //    if (!iter.second->is_taken()) {
+    //        iter.second->del(key);
+    //    }
+    //}
+    //TABLES_LOCK.unlock();
+
+    ////Invalidate in all SSTables
+    //SST_LOCK.lock();
+    //for (auto& sst_iter: _sst_map) {
+    //    //Blindly invalidate for all SSTs
+    //    sst_iter->invalidate(key);
+    //}
+    //SST_LOCK.unlock();
+
+}
+
+void Column::dump_table_to_disk () {
+
+    unique_lock<mutex> TABLE_LOCK(_tables_lock, std::defer_lock);
+    unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
+
+    map<string, string> table_raw;
+    long table_uid = -1;
+    long sst_uid = -1;
+
+    //Find a table to dump, take and flag it atomically
+    TABLE_LOCK.lock();
+    for(auto rit=_tables_map.rbegin(); rit!=_tables_map.rend(); ++rit) {
+        if (!rit->second->is_taken()) {
+            table_raw = rit->second->take_map();
+            table_uid = rit->first;
+            //FIXME - poor control flow
+            break;
         }
     }
+    TABLE_LOCK.unlock();
+
+    //Get the next SST uid
+    SST_LOCK.lock();
+    sst_uid = _sst_uid++;
+    SST_LOCK.unlock();
+
+
+    //Actually create the SST
+    string sst_name = "sst" +  to_string(sst_uid) + "_" + _name;
+    SSTable *new_sst = new SSTable(sst_name, table_raw, _compression_opt);
+
+    //Add the new sst to our sst_list
+    SST_LOCK.lock();
+    _sst_map[sst_uid] = new_sst;
+    SST_LOCK.unlock();
+
+    //Remove the now redundant table
+    TABLE_LOCK.lock();
+    _tables_map.erase(table_uid);
+    TABLE_LOCK.unlock();
 
 }
 
-//Blindly delete or invalidate ALL mappings to this particular key
-void Column::del (string key) {
-
-    //Delete from memtable
-    _mtable_lock.lock();
-    _mtable->del(key);
-    _mtable_lock.unlock();
-
-    //Delete from RONLY tables
-    _ronly_lock.lock();
-    for (auto& ronly_iter: _ronly_list) {
-
-        ronly_iter->del(key);
-    }
-    _ronly_lock.unlock();
-
-    //Invalidate in all SSTables
-    _sst_lock.lock();
-    for (auto& sst_iter: _sst_list) {
-        //Blindly invalidate for all SSTs
-        sst_iter->invalidate(key);
-    }
-    _sst_lock.unlock();
+void Column::compact_sst(SSTable* newer, SSTable* older) {
 
 }
-
 /*****************************************************************************
  *                                  MemTable                                 *
  *****************************************************************************/
 
-Memtable::Memtable(string name) {
+Memtable::Memtable(string name, long uid) {
 
     _name = name;
+    _uid = uid;
     _size = 0;
+    _taking_dump = false;
 
     cout << "Creating " << _name << std::endl;
     return;
@@ -182,32 +236,41 @@ int Memtable::write (string key, string value) {
 
 }
 
-string Memtable::read (string key) {
+int Memtable::read (string key, string *out_str) {
 
-    string ret;
+    auto iter = _map.find(key);
+    if (iter != _map.end()) {
 
-    _iter = _map.find(key);
-
-    if (_iter != _map.end()) {
-
-        ret = _iter->second;
+        out_str->assign(iter->second);
+        return 0;
 
     }
-    return ret;
+    return -1;
 
 }
 
-void Memtable::del (string key) {
+int Memtable::del (string key) {
 
-    _iter = _map.find(key);
-    if (_iter != _map.end()) {
+    auto iter = _map.find(key);
+    if (iter != _map.end()) {
 
-        _size -= _iter->second.length();
+        _size -= iter->second.length();
         _map.erase(key);
     }
+
+    return 0;
 }
 
-map<string, string> Memtable::get_map(void) {
+long Memtable::get_uid() {
+    return _uid;
+}
+
+bool Memtable::is_taken() {
+    return _taking_dump;
+}
+
+map<string, string> Memtable::take_map(void) {
+    _taking_dump = true;
     return _map;
 }
 /*****************************************************************************
@@ -234,7 +297,7 @@ SSTable::SSTable(string uuid,
     _name = uuid;
     _filename = uuid;
     _file_len = 0;
-    _compression_type = compress_opt;
+    _compression_opt = compress_opt;
 
     cout << "Creating " << _name << std::endl;
 
@@ -285,8 +348,6 @@ SSTable::SSTable(string uuid,
         cout << "ERROR: " << _filename << " cannot be opened" << std::endl;
         return;
     }
-
-    cout << _filename << " created successfully!" << std::endl;
 }
 
 /***
@@ -296,6 +357,8 @@ SSTable::SSTable(string uuid,
  ***/
 SSTable::~SSTable(void) {
 
+    //FIXME - delete the index_entry_t values
+
     return;
 }
 
@@ -304,9 +367,9 @@ SSTable::~SSTable(void) {
  */
 void SSTable::invalidate(string key) {
 
-    _iter = _index.find(key);
-    if (_iter != _index.end()) {
-        _iter->second->valid = false;
+    auto iter = _index.find(key);
+    if (iter != _index.end()) {
+        iter->second->valid = false;
     }
 }
 
@@ -325,17 +388,16 @@ long SSTable::get_file_len() {
  *  the index before opening the file.
  *
  ***/
-string SSTable::read(string key) {
+int SSTable::read(string key, string *out_str) {
 
-    string ret;
     long offset;
 
     ifstream infile(_filename.c_str());
-    _iter = _index.find(key);
+    auto iter = _index.find(key);
 
-    if (_iter != _index.end()) {
+    if (iter != _index.end()) {
 
-        index_entry_t *entry = _iter->second;
+        index_entry_t *entry = iter->second;
 
         //Data is in SSTable
         if (entry->valid) {
@@ -344,23 +406,27 @@ string SSTable::read(string key) {
 
             infile.seekg(offset);
 
-            std::getline(infile, ret);
+            std::getline(infile, *out_str);
 
             if(!infile.good()) {
                 cout <<"ERROR: Reading "<<key<<" from "<<_name<<std::endl;
                 //ret.clear();
             }
+
+            //FOUND!
+            return 0;
         }
     }
 
-    return ret;
+    //NOT FOUND!
+    return -1;
 }
 
 bool SSTable::peek(string key) {
 
-    _iter = _index.find(key);
+    auto iter = _index.find(key);
 
-    return (_iter != _index.end());
+    return (iter != _index.end());
 
 }
 /***
@@ -376,14 +442,14 @@ int SSTable::merge_into_table(SSTable new_table, long table_offset) {
 
     ifstream infile(_filename.c_str());
 
-    for (_iter = _index.begin(); _iter != _index.end(); _iter++) {
+    for (auto& iter : _index) {
 
         //  key is not already in new table ---- key has valid entry
-        if ((!new_table.peek(_iter->first)) and (_iter->second->valid)) {
+        if ((!new_table.peek(iter.first)) and (iter.second->valid)) {
             //Found an entry to add!
-            data_key = _iter->first;
-            data_len = _iter->second->len;
-            local_offset = _iter->second->offset;
+            data_key = iter.first;
+            data_len = iter.second->len;
+            local_offset = iter.second->offset;
 
             //Read data from local file
             infile.seekg(local_offset);
@@ -405,7 +471,7 @@ int SSTable::merge_into_table(SSTable new_table, long table_offset) {
     }
 
     //Instruct the newer table to add the new made block of data
-    return new_table.append_data_block(new_block, new_map, _compression_type);
+    return new_table.append_data_block(new_block, new_map, _compression_opt);
 }
 
 int SSTable::append_data_block(string data,
@@ -415,7 +481,7 @@ int SSTable::append_data_block(string data,
     ofstream outfile;
     long data_length = data.length();
 
-    if (compression_opt != _compression_type) {
+    if (compression_opt != _compression_opt) {
         cout <<"ERROR: cant merge data with different compression type!\n";
         return -1;
     }
@@ -453,115 +519,4 @@ int SSTable::append_data_block(string data,
 //    std::free(_bf);
 //    return;
 //}
-
-/*****************************************************************************
- *                                  SSIndex                                  *
- *****************************************************************************/
-
-//SSIndex::SSIndex(string name) {
-//
-//    _name = name;
-//
-//    cout << "Creating " << _name << std::endl;
-//    return;
-//}
-//
-//SSIndex::~SSIndex(void) {
-//    return;
-//}
-//
-///*
-// * SSIndex.lookup(key)
-// */
-//index_entry_t* SSIndex::lookup (string key) {
-//
-//    _iter = _index.find(key);
-//    if (_iter != _index.end()) {
-//        return _iter->second;
-//    }
-//    return NULL;
-//}
-//
-///*
-// * SSIndex.erase(key)
-// */
-//void SSIndex::erase (string key) {
-//    //FIXME - free the index_entry_t?
-//    _index.erase(key);
-//}
-//
-///*
-// * SSIndex.invalidate(key)
-// */
-//void SSIndex::invalidate (string key) {
-//
-//    _iter = _index.find(key);
-//
-//    if (_iter != _index.end()) {
-//        //Key is mapped! Invalidate it
-//        _iter->second->valid = false;
-//    }
-//}
-//
-///*
-// * SSIndex.map(key, offset, len)
-// */
-//void SSIndex::map (string key, int offset, int length) {
-//
-//    _iter = _index.find(key);
-//
-//    if (_iter != _index.end()) {
-//        //Remap existing entry
-//        _iter->second->offset = offset;
-//        _iter->second->len = length;
-//        _iter->second->valid = true;
-//        cout << _name << " remapped: " << key << std::endl;
-//
-//    } else {
-//        //Make a new map entry
-//        index_entry_t *new_entry = new index_entry_t;
-//        new_entry->offset = offset;
-//        new_entry->len = length;
-//        new_entry->valid = true;
-//
-//        //Insert it
-//        _index.insert(
-//            std::map<string, index_entry_t*>::value_type(key, new_entry)
-//        );
-//        cout << _name << " mapped: " << key << std::endl;
-//    }
-//}
-
-/***
- *
- *  Consumes the index called with this function by adding any non-overlapping
- *  key:value pairs to this index
- *
- ***/
-//int SSIndex::consume_index(SSIndex *old_index) {
-//    //insert each of my keys into the newer index
-//    index_entry_t *my_entry;
-//    index_entry_t *new_entry;
-//    string my_key;
-//    _iter = _index.begin();
-//
-//    while(_iter != _index.end()) {
-//        my_entry = _iter->second;
-//        my_key = _iter->first;
-//
-//        //Only insert into new index if key was never seen
-//        new_entry = new_index->lookup(my_key);
-//        if(new_entry == NULL) {
-//            cout << "inserting " << my_key << " into new index" << std::endl;
-//            new_index->map(my_key,
-//                           my_entry->offset + new_size,
-//                           my_entry->len);
-//        }
-//
-//        _iter++;
-//    }
-//
-//    return 0;
-//}
-
 

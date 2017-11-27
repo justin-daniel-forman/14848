@@ -17,22 +17,25 @@ class Column {
 private:
 
     std::string _name;
-    int _compression;
-    int _uuid;
+    int _compression_opt;
 
-    Memtable *_mtable;
+    //Single writeable memtable
     std::mutex _mtable_lock;
+    Memtable *_mtable;
 
-    //FIXME add bloomfilter so we don't have to iter thru each for reads?
-    std::deque <Memtable*> _ronly_list;
-    std::mutex _ronly_lock;
+    //RONLY memtables
+    std::mutex _tables_lock;
+    long _table_uid;
+    std::map <long, Memtable*> _tables_map;
 
-    //FIXME add bloomfilter so we don't have to iter thru each for reads?
-    std::deque <SSTable*> _sst_list;
+    //SSTs
     std::mutex _sst_lock;
+    long _sst_uid;
+    std::map <long, SSTable*> _sst_map;
 
-    int  dump_mtable(void);
-    void compact_sst(void);
+    //Background cleanup functions
+    void  dump_table_to_disk(void);
+    void compact_sst(SSTable*, SSTable*);
 
 public:
     Column(std::string, int = 0);

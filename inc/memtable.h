@@ -14,19 +14,21 @@ class Memtable {
 private:
     std::string _name;
     std::map<std::string, std::string> _map;
-    std::map<std::string, std::string>::iterator _iter;
-    int _size;
+    bool _taking_dump; //Indicates a thread has started to dump this table
+    long _size, _uid;
 
 public:
 
-    Memtable(std::string);
+    Memtable(std::string, long);
     ~Memtable(void);
 
-    std::string read(std::string);
+    int read(std::string, std::string*);
     int write(std::string, std::string);
-    void del(std::string);
+    int del(std::string);
 
-    std::map<std::string, std::string> get_map();
+    bool is_taken();
+    long get_uid();
+    std::map<std::string, std::string> take_map();
 };
 
 #endif /* MEMTABLE_H */

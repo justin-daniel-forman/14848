@@ -24,10 +24,9 @@ private:
     std::string _name;
     std::string _filename;
     long _file_len;
-    int _compression_type;
+    long _compression_opt;
 
     std::map<std::string, index_entry_t*> _index;
-    std::map<std::string, index_entry_t*>::iterator _iter;
 
 public:
     SSTable(std::string name,
@@ -35,7 +34,7 @@ public:
             int compress_opt = 0);
     ~SSTable(void);
 
-    std::string read(std::string);
+    int read(std::string, std::string*);
     bool peek(std::string);
     void invalidate(std::string);
     long get_file_len();
