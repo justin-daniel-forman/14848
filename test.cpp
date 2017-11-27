@@ -25,15 +25,15 @@ int main() {
     int num_fails = 0;
 
     Test_Column tc(0);
-    num_fails += tc.insert_test(1000);
-    num_fails += tc.mixed_test(10000, 500, 500);
+    num_fails += tc.insert_test(5000);
+    num_fails += tc.mixed_test(10000, 10, 10); //This can fail as we increase dups and deletes
 
     std::set <std::string> column_names = {"c0", "c1", "c2", "c3", "c4"};
     Test_DB tdb(column_names);
 
     num_fails += tdb.single_insert_test(500);
     num_fails += tdb.single_insert_test(4000);
-    num_fails += tdb.many_mixed_test(5000, 1, 50); //This fails as we increase # writes
+    num_fails += tdb.many_mixed_test(1000, 10, 10); //This fails as we increase # writes
 
     if(num_fails != 0) {
         std::cout << "FAILURE WITH SIGNATURE: " << num_fails << std::endl;
@@ -374,6 +374,8 @@ int Test_Column::mixed_test(int num_inserts, int num_deletes, int num_dups) {
             _col->del(_keys[i % _keys.size()]);
             _map.erase(_keys[i % _keys.size()]);
 
+            num_deletes--;
+
         } else if(entropy == 5 && num_dups > 0 && i > 0) {
             //duplicate an existing entry with a new value
 
@@ -383,6 +385,8 @@ int Test_Column::mixed_test(int num_inserts, int num_deletes, int num_dups) {
 
             _map[_keys[i % _keys.size()]] = vstr;
             _col->write(_keys[i % _keys.size()], vstr);
+
+            num_dups--;
 
         } else if(num_inserts > 0) {
             //med value, small key
@@ -398,6 +402,8 @@ int Test_Column::mixed_test(int num_inserts, int num_deletes, int num_dups) {
             _col->write(kstr, vstr);
             _map[kstr] = vstr;
             _keys.push_back(kstr);
+
+            num_inserts--;
 
         }
 

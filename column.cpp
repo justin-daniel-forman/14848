@@ -14,6 +14,7 @@
 #include <fstream>
 #include <chrono>
 #include <vector>
+#include <string.h>
 
 //#define NDEBUG
 #include <cassert>
@@ -195,6 +196,7 @@ void Column::Compact_Master() {
 
     }
 }
+
 void Column::Dump_Master() {
 
     unique_lock<mutex> TABLE_LOCK(_tables_lock, std::defer_lock);
@@ -597,7 +599,7 @@ BloomFilter::BloomFilter(int size) {
 
     _size = size;
     _bf   = (int*) std::malloc(sizeof(int) * size);
-    //memset(_bf, 0, sizeof(int)*size);
+    memset(_bf, 0, sizeof(int)*size);
 
     return;
 }
