@@ -5,15 +5,15 @@
  *  Contains definitions for class functions needed to store a column
  *  in our NoSQL database.
  *
- *  Authors: Justin Forman, Mark Wuebbens
+ *  Authors: Mark Wuebbens
  *
  ***/
 
 #include <iostream>
 #include <cstdlib>
 #include <fstream>
-#include <string>
-#include <thread>
+#include <chrono>
+#include <vector>
 
 //#define NDEBUG
 #include <cassert>
@@ -37,7 +37,12 @@ Column::Column (string name, int comp_opt) {
 
     _mtable = new Memtable(_name+"_mtable"+to_string(table_id), table_id);
 
-    cout << "Creating " << _name << std::endl;
+    //Spawn off background threads to handle dumping to disk and compaction
+    //dumper = thread (&Column::Dump_Master, this).detach();
+    thread (&Column::Dump_Master, this).detach();
+    //thread compact_master (&Column::Compact_Master, this);
+
+    cout << "Created " << _name << std::endl;
 }
 
 
@@ -45,6 +50,7 @@ Column::~Column() {
     delete _mtable;
 
     //FIXME - moar better
+    //dumper.join();
     //_tables_map.clear();
 }
 
@@ -99,11 +105,7 @@ void Column::write (string key, string value) {
         //Move full table to our full table map
         TABLES_LOCK.lock();
         _tables_map[_mtable->get_uid()] = _mtable;
-
-        if (_tables_map.size() > 10) {
-            //Spawn a thread to dump one of our full tables
-            thread (&Column::dump_table_to_disk, this).detach();
-        }
+        assert(_tables_map.size() < 10000);
 
         long new_table_uid = _table_uid++;
         TABLES_LOCK.unlock();
@@ -152,52 +154,132 @@ void Column::del (string key) {
 
 }
 
-void Column::dump_table_to_disk () {
+void Column::dump_map_to_disk (Dump_Container *data) {
+
+    //Create an SST from the provided map
+    string sst_name = "sst" +  to_string(data->sst_uid) + "_" + _name;
+
+    data->new_sst = new SSTable(sst_name, data->raw_map, _compression_opt);
+
+}
+
+void Column::Compact_Master() {
 
     unique_lock<mutex> TABLE_LOCK(_tables_lock, std::defer_lock);
     unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
-    map<string, string> table_raw;
-    long table_uid = -1;
-    long sst_uid = -1;
+    deque<Compact_Worker*> workers;
 
-    //Find a table to dump, take and flag it atomically
-    TABLE_LOCK.lock();
-    for(auto rit=_tables_map.rbegin(); rit!=_tables_map.rend(); ++rit) {
-        if (!rit->second->is_taken()) {
-            table_raw = rit->second->take_map();
-            table_uid = rit->first;
-            //FIXME - poor control flow
-            break;
+    int delay_ms = 10;
+
+    while(1) {
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+
+        //Initiate Compaction Stuffs
+        if (_sst_map.size() < 10) {
+            //Nothing to do
+            delay_ms += 1;
+
+        } else {
+            //Initiate compacting two SSTs together
+            //long newer_uid, older_uid;
+            delay_ms = (delay_ms * 4) / 5;
+            SST_LOCK.lock();
+            //FIXME -implement
+            SST_LOCK.unlock();
         }
+
+        //Join on Workers, and finalize a compaction
+
     }
-    TABLE_LOCK.unlock();
+}
+void Column::Dump_Master() {
 
-    //Get the next SST uid
-    SST_LOCK.lock();
-    sst_uid = _sst_uid++;
-    SST_LOCK.unlock();
+    unique_lock<mutex> TABLE_LOCK(_tables_lock, std::defer_lock);
+    unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
+    vector<Dump_Container> data;
+    vector<thread> workers;
 
-    //Actually create the SST
-    string sst_name = "sst" +  to_string(sst_uid) + "_" + _name;
-    SSTable *new_sst = new SSTable(sst_name, table_raw, _compression_opt);
+    int delay_ms = 10;
 
-    //Add the new sst to our sst_list
-    SST_LOCK.lock();
-    _sst_map[sst_uid] = new_sst;
-    SST_LOCK.unlock();
+    while(1) {
 
-    //Remove the now redundant table
-    TABLE_LOCK.lock();
-    _tables_map.erase(table_uid);
-    TABLE_LOCK.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+        cout << "IM AWAKE!!!!!" << std::endl;
+
+        //Initiate Dumps to Disk
+        if (_tables_map.size() < 10) {
+            //Nothing to do, might as well sleep
+            delay_ms += 1;
+
+        } else {
+            //Initiate splilling a table to disk
+            long table_uid, sst_uid;
+            map<string, string> table_raw;
+
+            delay_ms = (delay_ms * 4) / 5;
+
+            //Find the oldest table to dump
+            TABLE_LOCK.lock();
+            for(auto rit=_tables_map.rbegin();
+                rit!=_tables_map.rend();
+                ++rit) {
+
+                if (!rit->second->is_taken()) {
+                    //Take and flag this table atomically
+                    table_raw = rit->second->take_map();
+                    table_uid = rit->first;
+                    break;
+                }
+            }
+            assert(!table_raw.empty());
+            TABLE_LOCK.unlock();
+
+            //Get the next SST uid
+            SST_LOCK.lock();
+            sst_uid = _sst_uid++;
+            SST_LOCK.unlock();
+
+            //Spawn a thread to create the SST
+            Dump_Container worker_data;
+            worker_data.table_uid = table_uid;
+            worker_data.sst_uid = sst_uid;
+            worker_data.raw_map = table_raw;
+
+            workers.push_back(
+                thread (&Column::dump_map_to_disk, this, &worker_data));
+
+            data.push_back(worker_data);
+        }
+
+        //Attempt to join on oldest Worker
+        auto& thread = workers[0];
+        auto meta = data[0];
+        if (thread.joinable()) {
+
+            //This worker is done! Wipe up fastidiously
+            thread.join();
+
+            //Add the new sst to our sst_list
+            SST_LOCK.lock();
+            _sst_map[meta.sst_uid] = meta.new_sst;
+            SST_LOCK.unlock();
+
+            //Remove the now redundant table
+            TABLE_LOCK.lock();
+            _tables_map.erase(meta.table_uid);
+            TABLE_LOCK.unlock();
+
+            workers.erase(workers.begin());
+            data.erase(data.begin());
+        }
+
+    } //while(1)
 
 }
 
-void Column::compact_sst(SSTable* newer, SSTable* older) {
-
-}
 /*****************************************************************************
  *                                  MemTable                                 *
  *****************************************************************************/

@@ -14,7 +14,7 @@ class Memtable {
 private:
     std::string _name;
     std::map<std::string, std::string> _map;
-    bool _taking_dump; //Indicates a thread has started to dump this table
+    bool _taking_dump; //Indicates a thread has started to dump on this table
     long _size, _uid;
 
 public:
