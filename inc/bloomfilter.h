@@ -12,9 +12,9 @@ private:
     int _size;
     int *_bf;
 
-    int h0(std::string k);
-    int h1(std::string k);
-    int h2(std::string k);
+    unsigned int h0(std::string k);
+    unsigned int h1(std::string k);
+    unsigned int h2(std::string k);
 
 public:
     bool check(std::string);

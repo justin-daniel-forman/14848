@@ -19,6 +19,7 @@
 #include <cassert>
 
 #include "inc/column.h"
+#include "inc/bloomfilter.h"
 
 using namespace std;
 
@@ -588,17 +589,78 @@ int SSTable::append_data_block(string data,
 /*****************************************************************************
  *                                  BloomFilter                              *
  *****************************************************************************/
-//BloomFilter::BloomFilter(int size) {
-//    cout << "Creating new BloomFilter" << std::endl;
-//
-//    _size = size;
-//    _bf   = (int*) std::malloc(sizeof(int) * size);
-//    return;
-//}
-//
-//
-//BloomFilter::~BloomFilter() {
-//    std::free(_bf);
-//    return;
-//}
+BloomFilter::BloomFilter(int size) {
+    cout << "Creating new BloomFilter" << std::endl;
+
+    _size = size;
+    _bf   = (int*) std::malloc(sizeof(int) * size);
+    memset(_bf, 0, sizeof(int)*size);
+
+    return;
+}
+
+
+BloomFilter::~BloomFilter() {
+    std::free(_bf);
+    return;
+}
+
+bool BloomFilter::check(std::string k) {
+
+    unsigned int idx0 = h0(k);
+    unsigned int idx1 = h1(k);
+    unsigned int idx2 = h2(k);
+
+    std::cout << idx0 << ", " << idx1 << ", " << idx2 << std::endl;
+
+    return (_bf[idx0] & _bf[idx1] & _bf[idx2]);
+
+}
+
+void BloomFilter::insert(std::string k) {
+
+    std::cout << "Inserting " << k << std::endl;
+
+    _bf[h0(k)] = 1;
+    _bf[h1(k)] = 1;
+    _bf[h2(k)] = 1;
+
+    return;
+}
+
+unsigned int BloomFilter::h0(std::string k) {
+
+    unsigned int sum = 0;
+
+    //Some random fast hash
+    for(auto& c : k) {
+        sum = (sum ^ c) + (c*c);
+    }
+
+    return sum % _size;
+}
+
+unsigned int BloomFilter::h1(std::string k) {
+
+    unsigned int sum = 0;
+
+    for(auto& c : k) {
+        sum = (sum + c) * c;
+    }
+
+    return sum % _size;
+
+}
+
+unsigned int BloomFilter::h2(std::string k) {
+
+    unsigned int sum = 0;
+
+    for(auto& c : k) {
+        sum = (c*c*c) + sum;
+    }
+
+    return sum % _size;
+
+}
 

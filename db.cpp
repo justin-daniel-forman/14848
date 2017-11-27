@@ -47,6 +47,29 @@ int DB::new_column_family(std::string name, std::set<std::string> *schema, int c
 
 /***
  *
+ *  Remove a column family if it exists. All storage associated with this
+ *  column family should also be dropped.
+ *
+ ***/
+int DB::delete_column_family(std::string cf_name) {
+
+    std::map<std::string, Column_Family*>::iterator cf_iter;
+
+    //Check that a column family of this name already exists
+    cf_iter = _cf_map.find(cf_name);
+    if(cf_iter == _cf_map.end()) {
+        return -1;
+    }
+
+    delete cf_iter->second;
+
+    return 0;
+
+}
+
+
+/***
+ *
  *  Insert a row into a column family by specifying the column->value mappings
  *  for the row_key indicated.
  *
@@ -98,6 +121,7 @@ int DB::join(Search_Result *sr, std::set<std::string> *tables, std::string pcol)
     std::set<std::string>::iterator table_iter;
     std::string curr_cf_name;
     Search_Result temp_result;
+    std::set <std::string> empty_set;
 
     //Check that user has allocated space for result
     if(sr == NULL) {
@@ -105,7 +129,7 @@ int DB::join(Search_Result *sr, std::set<std::string> *tables, std::string pcol)
     }
 
     //Use the keys from the primary column to pull out rows from all of the;
-    if(this->select(sr, pcol, "", "") < 0) {
+    if(this->select(sr, pcol, "", "", &empty_set) < 0) {
         return -1;
     }
 
@@ -115,7 +139,7 @@ int DB::join(Search_Result *sr, std::set<std::string> *tables, std::string pcol)
     while(table_iter != tables->end()) {
 
         //Error out if there was a problem getting the data
-        if(this->select(&temp_result, *table_iter, "", "") < 0) {
+        if(this->select(&temp_result, *table_iter, "", "", &empty_set) < 0) {
             return -1;
         }
 
@@ -137,7 +161,8 @@ int DB::join(Search_Result *sr, std::set<std::string> *tables, std::string pcol)
  *  operation.
  *
  ***/
-int DB::select(Search_Result *sr, std::string cf, std::string min, std::string max) {
+int DB::select(Search_Result *sr, std::string cf, std::string min,
+    std::string max, std::set<std::string> *col_names) {
 
     std::map<std::string, Column_Family*>::iterator cf_iter;
 
@@ -153,7 +178,89 @@ int DB::select(Search_Result *sr, std::string cf, std::string min, std::string m
     }
 
     //Perform the select from the indicated column family
-    return (cf_iter->second)->cf_select(sr, min, max);
+    return (cf_iter->second)->cf_select(sr, min, max, col_names);
+
+}
+
+/***
+ *
+ *  Analytic operation to find a value in a column. This can be used
+ *  to pick out the min, max, or any other specific point.
+ *
+ ***/
+std::string DB::compare(std::string cf_name, std::string col_name,
+    std::string base, int (*cmp) (std::string, std::string)) {
+
+    std::string max_val = base;
+
+    //Pull out the values for an entire column
+    Search_Result sr;
+    std::set <std::string> col_set = {col_name};
+    this->select(&sr, cf_name, "", "", &col_set);
+
+    //Apply the comparison function to each of the values to find out the max
+    for (auto& row_iter : sr._table) {
+        if(cmp(max_val, row_iter.second->front()) < 0)  {
+            max_val = row_iter.second->front();
+        }
+    }
+
+    return max_val;
+}
+
+/***
+ *
+ *  Analytic operation to find out aggregate value for a column. This is
+ *  essentially a reduce.
+ *
+ ***/
+std::string DB::aggregate(std::string cf_name, std::string col_name,
+    std::string base, std::string (*agg) (std::string, std::string)) {
+
+    std::string sum = base;
+
+    //Pull out the values for an entire column
+    Search_Result sr;
+    std::set <std::string> col_set = {col_name};
+    this->select(&sr, cf_name, "", "", &col_set);
+
+    //Apply the comparison function to each of the values to find out the max
+    for (auto& row_iter : sr._table) {
+        sum = agg(sum, row_iter.second->front());
+    }
+
+    return sum;
+
+}
+
+/***
+ *
+ *  Analytic operation to map a column to some data in the view produced.
+ *
+ ***/
+int DB::cross(Search_Result *sr, std::string cf_name, std::string col_a,
+    std::string col_b, std::string (*cross)(std::string, std::string)) {
+
+    std::string first;
+    std::string second;
+    int st;
+
+    std::set <std::string> col_set = {col_a, col_b};
+    st = this->select(sr, cf_name, "", "", &col_set);
+
+    //Apply the comparison function to each of the values to find out the max
+    for (auto& row_iter : sr->_table) {
+        first = row_iter.second->front();
+        row_iter.second->pop_front();
+        second = row_iter.second->front();
+        row_iter.second->pop_front();
+
+        row_iter.second->push_front(cross(first, second));
+    }
+
+    sr->_col_names.pop_back();
+
+    return st;
 
 }
 
@@ -335,7 +442,8 @@ Column_Family::~Column_Family(void) {
  *  the lower or upper bound of the keyspace respectively.
  *
  ***/
-int Column_Family::cf_select(Search_Result *r, std::string min, std::string max) {
+int Column_Family::cf_select(Search_Result *r,
+    std::string min, std::string max, std::set<std::string> *col_names) {
 
     std::set <std::string>::iterator lb;
     std::set <std::string>::iterator ub;
@@ -360,6 +468,13 @@ int Column_Family::cf_select(Search_Result *r, std::string min, std::string max)
         _col_iter = _cols.begin();
 
         while(_col_iter != _cols.end()) {
+
+            //Skip this column if not selected
+            if((col_names->size() > 0)
+                && col_names->find(_col_iter->first) == col_names->end()) {
+                _col_iter++;
+                continue;
+            }
 
             //record the columns exactly once
             if(_idx_iter == lb) {

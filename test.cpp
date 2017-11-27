@@ -3,6 +3,7 @@
 #include <string>
 #include <cstdlib>
 #include <string.h>
+#include <vector>
 
 //User defined libraries
 #include "inc/column.h"
@@ -12,118 +13,283 @@
 
 using namespace std;
 
+int cmp (std::string, std::string);
+std::string agg(std::string, std::string);
+std::string cross(std::string, std::string);
+
+void generate_rand_string(char*, int);
+int  string_to_int(string);
 
 int main() {
 
-    cout << "Hello World!" << std::endl;
-    cout << std::endl;
-    //Memtable mtable0("mtable0");
-    //mtable0.write("1", "table0 1");
-    //mtable0.write("2", "table0 3");
-    //mtable0.write("3", "table0 3");
-    //mtable0.write("4", "table0 4");
-    //mtable0.write("5", "table0 5");
-    //mtable0.write("6", "table0 6");
-    //mtable0.write("7", "table0 7");
-    ////cout << "Reading from mtable0: [1:" << mtable0.read("1") << "]\n";
-    ////cout << "Reading from mtable0: [2:" << mtable0.read("2") << "]\n";
-    ////cout << "Reading from mtable0: [4:" << mtable0.read("4") << "]\n";
-    //SSTable sstable0("sstable0", mtable0.get_map());
-    ////cout << "Reading from sstable0: [1:" << sstable0.read("1") << "]\n";
-    ////cout << "Reading from sstable0: [2:" << sstable0.read("2") << "]\n";
-    ////cout << "Reading from sstable0: [3:" << sstable0.read("3") << "]\n";
-    ////cout << "Reading from sstable0: [7:" << sstable0.read("7") << "]\n";
-
-    //cout << std::endl;
-    //Memtable mtable1("mtable1");
-    //mtable1.write("1", "table1 1");
-    //mtable1.write("3", "table1 3");
-    //mtable1.write("5", "table1 5");
-    //mtable1.write("7", "table1 7");
-    //mtable1.write("9", "table1 9");
-    //mtable1.write("11", "table1 11");
-    //mtable1.write("13", "table1 13");
-    //SSTable sstable1("sstable1", mtable1.get_map());
-    ////cout << "Reading from table1: [1:" << sstable1.read("1") << "]\n";
-    ////cout << "Reading from table1: [3:" << sstable1.read("3") << "]\n";
-    ////cout << "Reading from table1: [5:" << sstable1.read("5") << "]\n";
-
-
-    //sstable1.merge_into_table(sstable0, sstable0.get_file_len());
-
-    //cout << "Reading from table0: [1:" << sstable0.read("1") << "]\n";
-    //cout << "Reading from table0: [2:" << sstable0.read("2") << "]\n";
-    //cout << "Reading from table0: [2:" << sstable0.read("2") << "]\n";
-
+    int num_fails = 0;
 
     Test_Column tc(0);
-    tc.random_test(0, 1000, 0);
+    num_fails += tc.insert_test(1000);
+    num_fails += tc.mixed_test(10000, 500, 500);
 
+    std::set <std::string> column_names = {"c0", "c1", "c2", "c3", "c4"};
+    Test_DB tdb(column_names);
 
-    ////Try out Column Family Implementation
-    //std::set<std::string> column_names = {"ca", "cb", "cc"};
-    //Column_Family cf(&column_names, 0);
+    num_fails += tdb.single_insert_test(500);
+    num_fails += tdb.single_insert_test(4000);
+    num_fails += tdb.many_mixed_test(5000, 1, 50); //This fails as we increase # writes
 
-    //std::map<std::string, std::string> entry;
-    //entry["ca"] = "a";
-    //entry["cb"] = "b";
-    //entry["cc"] = "c";
+    if(num_fails != 0) {
+        std::cout << "FAILURE WITH SIGNATURE: " << num_fails << std::endl;
+    } else {
+        std::cout << "ALL TESTS PASS" << std::endl;
+    }
 
-    //cf.cf_insert("a", &entry);
-    //cf.cf_insert("d", &entry);
-    //cf.cf_insert("e", &entry);
-
-
-    //Search_Result sr;
-    //cf.cf_select(&sr, "a", "z");
-    //sr.print_result();
-    //cf.cf_select(&sr, "e", "e");
-    //sr.print_result();
-
-
-    ////DB implementation
-    //DB db;
-    //db.new_column_family("foobar", &column_names, 0);
-    //db.insert("foobar", "a", &entry);
-    //db.insert("foobar", "d", &entry);
-    //db.insert("foobar", "e", &entry);
-    //db.select(&sr, "foobar", "", "");
-    //sr.print_result();
-
-    //column_names = { "dc", "dd" };
-    //db.new_column_family("mark", &column_names, 0);
-    //entry.clear();
-    //entry["dc"] = "x";
-    //entry["dd"] = "y";
-    //db.insert("mark", "a", &entry);
-
-    //std::set<std::string> cf_names = {"mark"};
-    //db.select(&sr, "mark", "", "");
-    //sr.print_result();
-
-    //std::cout << "\n\n\n";
-    //db.join(&sr, &cf_names, "foobar");
-    //sr.print_result();
-
-    //db.del("foobar", "d");
-    //std::cout << "\n\n\n";
-    //db.join(&sr, &cf_names, "foobar");
-    //sr.print_result();
-
-    cout << "Goodbye!" << std::endl;
     return 0;
 
 }
 
 /*****************************************************************************
- *                             TEST_COLUMN_FAMILY                            *
+ *                      TEST ANALYTIC FUNCTIONS                              *
  *****************************************************************************/
 
-//int Test_Column_Family::random_test(int num_columns) {
-//
-//
-//}
+int cmp(std::string a, std::string b) {
+    if(a < b) {
+        return -1;
+    } else if(a == b) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
 
+std::string agg(std::string a, std::string b) {
+
+    int ia = std::stoi(a);
+
+    ia += string_to_int(b);
+
+    return std::to_string(ia);
+
+}
+
+std::string cross(std::string a, std::string b) {
+    return a.append(b);
+}
+
+
+/*****************************************************************************
+ *                             TEST_DB                                       *
+ *****************************************************************************/
+
+Test_DB::Test_DB(std::set <std::string> cnames) {
+    column_names = cnames;
+    cf_name = "0";
+    initialize();
+}
+
+Test_DB::~Test_DB() {
+    return;
+}
+
+
+void Test_DB::initialize(void) {
+
+    cf_name = std::to_string(stoi(cf_name) + 1);
+
+    //Create a new hash that we can use to compute aggregates accross our cols
+    for (auto& cname_iter : column_names) {
+        hashes[cname_iter] = 0;
+    }
+
+}
+
+/***
+ *
+ * Simplest possible test to check whether or not we can actually read/write
+ * a single value to our column family
+ *
+ ***/
+int Test_DB::single_insert_test(int size) {
+
+    //Startup
+    initialize();
+    db.new_column_family(cf_name, &column_names, 0);
+
+    //Perform the test
+    insert_random_entry(size);
+
+    //Check results
+    if(check_results() < 0) {
+        std::cout << "DB SINGLE INSERTION TEST FAILED!" << std::endl;
+        return -1;
+    } else {
+        std::cout << "DB SINGLE INSERTION TEST PASSED!" << std::endl;
+        return 0;
+    }
+
+}
+
+/***
+ *
+ * Checks that some sequence of interleaved inserts, updates, and deletes
+ * performs correctly.
+ *
+ ***/
+int Test_DB::many_mixed_test(int size, int ninserts, int ndeletes) {
+
+    //Startup
+    initialize();
+    db.new_column_family(cf_name, &column_names, 0);
+
+    //Perform the test
+    int total = ninserts + ndeletes;
+    for(int i = 0; i < total; i++) {
+
+        int entropy = rand() % 10;
+
+        if(entropy == 3 && (ndeletes > 0) && (i > 0)) {
+            delete_random_entry();
+            ndeletes--;
+
+        } else if(entropy == 5 && (ninserts > 0) && (i > 0)) {
+            insert_dup_entry(size);
+            ninserts--;
+
+        } else if(ninserts > 0) {
+            insert_random_entry(size);
+            ninserts--;
+
+        } else if(ndeletes > 0) {
+            delete_random_entry();
+            ndeletes--;
+        }
+
+    }
+
+    insert_random_entry(size);
+
+    //Check results
+    if(check_results() < 0) {
+        std::cout << "DB MANY MIX TEST FAILED!" << std::endl;
+        return -1;
+    } else {
+        std::cout << "DB MANY MIX TEST PASSED!" << std::endl;
+        return 0;
+    }
+
+}
+
+
+void Test_DB::insert_random_entry(int vsize) {
+
+    //Create a set of random entries for each column
+    char value [vsize];
+    for (auto& col_iter : column_names) {
+        generate_rand_string(value, vsize);
+        string v(value);
+        entry[col_iter] = v;
+        hashes[col_iter] += string_to_int(v);
+    }
+
+    //Generate a random row key for this entry
+    char rkey[100];
+    generate_rand_string(rkey, 100);
+    string rk(rkey);
+    row_keys.push_back(rk);
+
+    db.insert(cf_name, rk, &entry);
+
+}
+
+void Test_DB::insert_dup_entry(int vsize) {
+
+    //Create a set of random entries for each column
+    char value [vsize];
+    for (auto& col_iter : column_names) {
+        generate_rand_string(value, vsize);
+        string v(value);
+        entry[col_iter] = v;
+        hashes[col_iter] += string_to_int(v);
+    }
+
+    //Recycle an old key at random
+    int i;
+    if(row_keys.size() > 0) {
+        i = rand() % row_keys.size();
+
+        //Read out the value and "unupdate" the hash values accordingly
+        db.select(&sr, cf_name, row_keys[i], row_keys[i], &column_names);
+        for(auto& table_iter : sr._table) {
+
+            std::list<std::string> *val_list = table_iter.second;
+
+            for(auto & col_iter : column_names) {
+                hashes[col_iter] -= string_to_int(val_list->front());
+                val_list->pop_front();
+            }
+
+        }
+
+
+    //If there are no keys, just use a dummy one. This is very unlikely
+    //and ultimately irrelevant
+    } else {
+        row_keys.push_back("foo");
+    }
+
+
+    db.insert(cf_name, row_keys[i], &entry);
+
+}
+
+void Test_DB::delete_random_entry(void) {
+
+    //Recycle an old key at random
+    int i = rand() % row_keys.size();
+    unsigned int tries = 0;
+    while(row_keys[i] == "") {
+        if(tries == row_keys.size()) { //nothing left to delete
+            return;
+        }
+
+        i = rand() % row_keys.size();
+        tries++;
+    }
+
+    //Read out the value and "unupdate" the hash values accordingly
+    db.select(&sr, cf_name, row_keys[i], row_keys[i], &column_names);
+    for(auto& table_iter : sr._table) {
+
+        std::list<std::string> *val_list = table_iter.second;
+
+        for(auto & col_iter : column_names) {
+            hashes[col_iter] -= string_to_int(val_list->front());
+            val_list->pop_front();
+        }
+
+    }
+
+    //Delete the entry out of the column family
+    db.del(cf_name, row_keys[i]);
+    row_keys[i] = "";
+
+    return;
+
+}
+
+/***
+ *
+ *  Check that all hash values are consistent with our precalculated ones
+ *
+ ***/
+int Test_DB::check_results(void) {
+
+    for (auto& i : hashes) {
+        if(i.second != stoi(db.aggregate(cf_name, i.first, "0", agg))) {
+            return -1;
+        }
+    }
+
+    return 0;
+
+}
 
 /*****************************************************************************
  *                             TEST_COLUMN                                   *
@@ -138,67 +304,41 @@ Test_Column::~Test_Column() {
 }
 
 
-int Test_Column::random_test(int num_small, int num_med, int num_large) {
+int Test_Column::insert_test(int num_inserts) {
 
-    int ssize = 100;
-    int msize = 1000;
-    int lsize = 10000;
+    int ssize = 50;
+    int msize = 100;
 
     char small_buf [ssize];
     char med_buf   [msize];
-    char large_buf [lsize]; //larger than page size
-
-    int remaining_small = 0;//num_small;
-    int remaining_med   = num_med;
-    int remaining_large = 0;//num_large;
 
     string vstr;
     string kstr;
 
-    cout << "WRITING IN TEST_COLUMN" << std::endl;
-
     //Write all values into test column
-    while((remaining_small + remaining_med + remaining_large) > 0) {
+    for(int i = 0; i < num_inserts; i++) {
 
-        //switch(rand() % 3) {
-        switch(1) {
-            case 0: //small value, med key
-                generate_rand_string(small_buf, ssize);
-                generate_rand_string(med_buf, msize);
-                vstr = small_buf;
-                kstr = med_buf;
-                remaining_small--;
-                break;
+        //med value, small key
+        generate_rand_string(small_buf, ssize);
+        generate_rand_string(med_buf, msize);
 
-            case 1: //med value, small key
-                generate_rand_string(small_buf, ssize);
-                generate_rand_string(med_buf, msize);
-                kstr = small_buf;
-                vstr = med_buf;
-                remaining_med--;
-                break;
+        string tk(small_buf);
+        string tv(med_buf);
 
-            default: //large value, med key
-                generate_rand_string(large_buf, lsize);
-                generate_rand_string(med_buf, msize);
-                kstr = med_buf;
-                vstr = large_buf;
-                remaining_large--;
-                break;
-        }
+        kstr = tk;
+        vstr = tv;
 
         _col->write(kstr, vstr);
         _map[kstr] = vstr;
 
     }
 
-    cout << "READING IN TEST_COLUMN" << std::endl;
     //Read all values from test column
     _iter = _map.begin();
     while(_iter != _map.end()) {
         vstr = _col->read(_iter->first);
         if(vstr != _iter->second) {
-            cout << "Test Failed!" << std::endl;
+            cout << "COLUMN INSERT TEST FAIL!" << std::endl;
             cout << "Actual: " << _iter->second << std::endl;
             cout << "Observed: " << vstr << std::endl;
             return -1;
@@ -207,12 +347,86 @@ int Test_Column::random_test(int num_small, int num_med, int num_large) {
 
     }
 
-    cout << "Test success" << std::endl;
+    cout << "COLUMN INSERT TEST SUCCESS" << std::endl;
     return 0;
 
 }
 
-void Test_Column::generate_rand_string(char *buf, int size) {
+
+int Test_Column::mixed_test(int num_inserts, int num_deletes, int num_dups) {
+
+    int ssize = 50;
+    int msize = 100;
+
+    char small_buf [ssize];
+    char med_buf   [msize];
+
+    string vstr;
+    string kstr;
+
+    //Write all values into test column
+    for(int i = 0; i < num_inserts + num_deletes + num_dups; i++) {
+
+        int entropy = rand() % 10;
+
+        if(entropy == 3 && num_deletes > 0 && i > 0) { //delete an existing entry
+
+            _col->del(_keys[i % _keys.size()]);
+            _map.erase(_keys[i % _keys.size()]);
+
+        } else if(entropy == 5 && num_dups > 0 && i > 0) {
+            //duplicate an existing entry with a new value
+
+            generate_rand_string(med_buf, msize);
+            string tv(med_buf);
+            vstr = tv;
+
+            _map[_keys[i % _keys.size()]] = vstr;
+            _col->write(_keys[i % _keys.size()], vstr);
+
+        } else if(num_inserts > 0) {
+            //med value, small key
+            generate_rand_string(small_buf, ssize);
+            generate_rand_string(med_buf, msize);
+
+            string tk(small_buf);
+            string tv(med_buf);
+
+            kstr = tk;
+            vstr = tv;
+
+            _col->write(kstr, vstr);
+            _map[kstr] = vstr;
+            _keys.push_back(kstr);
+
+        }
+
+    }
+
+    //Read all values from test column
+    _iter = _map.begin();
+    while(_iter != _map.end()) {
+        vstr = _col->read(_iter->first);
+        if(vstr != _iter->second) {
+            cout << "COLUMN INSERT TEST FAIL!" << std::endl;
+            cout << "Actual: " << _iter->second << std::endl;
+            cout << "Observed: " << vstr << std::endl;
+            return -1;
+        }
+        _iter++;
+
+    }
+
+    cout << "COLUMN INSERT TEST SUCCESS" << std::endl;
+    return 0;
+
+}
+
+/*****************************************************************************
+ *                       RANDOM HELPER FUNCTIONS                             *
+ *****************************************************************************/
+
+void generate_rand_string(char *buf, int size) {
 
     int  i;
     char r;
@@ -226,4 +440,17 @@ void Test_Column::generate_rand_string(char *buf, int size) {
 
     return;
 
+}
+
+
+int string_to_int(string a) {
+
+    int sum = 0;
+
+    for(char& c : a) {
+        sum +=  (int) c;
+
+    }
+
+    return sum;
 }

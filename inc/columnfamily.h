@@ -53,7 +53,8 @@ public:
     Column_Family(std::set<std::string>*, int);
     ~Column_Family(void);
 
-    int cf_select(Search_Result *r, std::string min, std::string max);
+    int cf_select(Search_Result *r, std::string min, std::string max,
+        std::set<std::string>*);
     int cf_insert(std::string row_key, std::map<std::string, std::string> *m);
     int cf_delete(std::string key);
 
