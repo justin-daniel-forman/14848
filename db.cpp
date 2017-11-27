@@ -47,6 +47,29 @@ int DB::new_column_family(std::string name, std::set<std::string> *schema, int c
 
 /***
  *
+ *  Remove a column family if it exists. All storage associated with this
+ *  column family should also be dropped.
+ *
+ ***/
+int DB::delete_column_family(std::string cf_name) {
+
+    std::map<std::string, Column_Family*>::iterator cf_iter;
+
+    //Check that a column family of this name already exists
+    cf_iter = _cf_map.find(cf_name);
+    if(cf_iter == _cf_map.end()) {
+        return -1;
+    }
+
+    delete cf_iter->second;
+
+    return 0;
+
+}
+
+
+/***
+ *
  *  Insert a row into a column family by specifying the column->value mappings
  *  for the row_key indicated.
  *
