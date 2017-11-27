@@ -4,7 +4,7 @@
 #include <string>
 #include <map>
 
-#define PAGE_SIZE 4096
+#define PAGE_SIZE 4096 * 8
 
 /*
  *  Memtable implementation

@@ -208,7 +208,6 @@ void Column::Dump_Master() {
     while(1) {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-        cout << "IM AWAKE!!!!!" << std::endl;
 
         //Initiate Dumps to Disk
         if (_tables_map.size() < 10) {
@@ -256,25 +255,29 @@ void Column::Dump_Master() {
         }
 
         //Attempt to join on oldest Worker
-        auto& thread = workers[0];
-        auto meta = data[0];
-        if (thread.joinable()) {
+        if (!workers.empty()) {
+            auto& thread = workers[0];
+            auto meta = data[0];
+            if (thread.joinable()) {
 
-            //This worker is done! Wipe up fastidiously
-            thread.join();
+                //This worker is done! Wipe up fastidiously
+                thread.join();
 
-            //Add the new sst to our sst_list
-            SST_LOCK.lock();
-            _sst_map[meta.sst_uid] = meta.new_sst;
-            SST_LOCK.unlock();
+                //Add the new sst to our sst_list
+                SST_LOCK.lock();
+                _sst_map[meta.sst_uid] = meta.new_sst;
+                SST_LOCK.unlock();
 
-            //Remove the now redundant table
-            TABLE_LOCK.lock();
-            _tables_map.erase(meta.table_uid);
-            TABLE_LOCK.unlock();
+                //Remove the now redundant table
+                TABLE_LOCK.lock();
+                _tables_map.erase(meta.table_uid);
+                TABLE_LOCK.unlock();
 
-            workers.erase(workers.begin());
-            data.erase(data.begin());
+                workers.erase(workers.begin());
+                data.erase(data.begin());
+
+                cout << "WE JUST DUMPED TO DISK!!!!!" << std::endl;
+            }
         }
 
     } //while(1)
@@ -594,7 +597,7 @@ BloomFilter::BloomFilter(int size) {
 
     _size = size;
     _bf   = (int*) std::malloc(sizeof(int) * size);
-    memset(_bf, 0, sizeof(int)*size);
+    //memset(_bf, 0, sizeof(int)*size);
 
     return;
 }
