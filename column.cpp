@@ -215,8 +215,10 @@ void Column::Compact_Master() {
             worker_data.t0_uid = t0_uid;
             worker_data.t1_uid = t1_uid;
 
-            _cworkers.push_back(thread(&Column::compact_tables, this, &worker_data));
-            data.push_back(worker_data);
+            if(_cworkers.size() == 0) {
+                _cworkers.push_back(thread(&Column::compact_tables, this, &worker_data));
+                data.push_back(worker_data);
+            }
 
         }
 
@@ -584,6 +586,7 @@ int SSTable::merge_into_table(SSTable new_table, long table_offset) {
         //  key is not already in new table ---- key has valid entry
         if ((!new_table.peek(iter.first)) and (iter.second->valid)) {
 
+
             //Found an entry to add!
             data_key = iter.first;
             data_len = iter.second->len;
@@ -633,10 +636,6 @@ int SSTable::append_data_block(string data,
     outfile.open(_name.c_str(), std::ios_base::app);
     outfile << data.c_str();
     outfile.close();
-
-    myfile.open("JUSTIN", std::ios_base::app);
-    myfile << "foo";
-    myfile.close();
 
     _file_len = outfile.tellp();
 
