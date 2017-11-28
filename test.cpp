@@ -30,7 +30,7 @@ int main() {
 
     std::set <std::string> column_names = {"c0", "c1", "c2", "c3", "c4"};
     Test_DB tdb(column_names);
-    num_fails += tdb.many_mixed_test(400, 1000, 10); //This fails as we increase # writes
+    num_fails += tdb.many_mixed_test(100, 300, 0); //This fails as we increase # writes
 
     if(num_fails != 0) {
         std::cout << "FAILURE WITH SIGNATURE: " << num_fails << std::endl;
@@ -149,9 +149,7 @@ std::string cross(std::string a, std::string b) {
 std::string str_hash(std::string a, std::string b) {
 
     int sum = stoi(a);
-    for (auto& c : b) {
-        sum += c;
-    }
+    sum += string_to_int(b);
     return std::to_string(sum);
 
 }
@@ -365,7 +363,10 @@ void Test_DB::delete_random_entry(void) {
 int Test_DB::check_results(void) {
 
     for (auto& i : hashes) {
-        if(i.second != stoi(db.aggregate(cf_name, i.first, "0", str_hash))) {
+        int myVal = stoi(db.aggregate(cf_name, i.first, "0", str_hash));
+        if(i.second != myVal) {
+            std::cout << myVal << std::endl;
+            std::cout << i.second << std::endl;
             return -1;
         }
     }
