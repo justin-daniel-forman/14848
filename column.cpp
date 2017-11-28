@@ -82,7 +82,7 @@ string Column::read (string key) {
 
     unique_lock<mutex> MEM_LOCK(_mtable_lock, std::defer_lock);
     unique_lock<mutex> TABLES_LOCK(_tables_lock, std::defer_lock);
-    unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
+    //unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
     //Read from memtable
     MEM_LOCK.lock();
@@ -95,18 +95,24 @@ string Column::read (string key) {
     for (auto& table_iter: _tables_map) {
 
         not_found = table_iter.second->read(key, &ret);
-        if (!not_found) return ret;
+        if (!not_found) {
+            break;
+        }
     }
     TABLES_LOCK.unlock();
 
     //Read from the on disk SSTs
-    SST_LOCK.lock();
-    for (auto& sst_iter: _sst_map) {
-
-        not_found = sst_iter.second->read(key, &ret);
-        if (!not_found) return ret;
+    if(not_found) {
+        SST_LOCK.lock();
+        for (auto& sst_iter: _sst_map) {
+            cout << "Reading: " << sst_iter.first <<  std::endl;
+            not_found = sst_iter.second->read(key, &ret);
+            if (!not_found) {
+                break;
+            }
+        }
+        SST_LOCK.unlock();
     }
-    SST_LOCK.unlock();
 
     return ret;
 }
@@ -161,16 +167,13 @@ void Column::compact_tables (Compact_Container *data) {
     std::cout << "MERGING " << data->t0_uid << " AND " << data->t1_uid << std::endl;
     data->t0->merge_into_table(*(data->t1), data->t1->get_file_len());
 
-    data->next_table = data->t1;
-    data->next_uid   = data->t1_uid;
-
     return;
 }
 
 void Column::Compact_Master() {
 
     unique_lock<mutex> TABLE_LOCK(_tables_lock, std::defer_lock);
-    unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
+    //unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
     deque<Compact_Container> data;
 
@@ -199,14 +202,14 @@ void Column::Compact_Master() {
 
             delay_ms = (delay_ms * 4) / 5;
 
-            //Find the oldest two SSTs to merge
+            //Find the oldest two SSTs to merge FIXME: The sorts will be
+            //lexigraphical and will compact the wrong tables...
             SST_LOCK.lock();
             siter  = _sst_map.begin();
             t0_uid = siter->first;
             t0     = siter->second;
             t1_uid = (++siter)->first;
             t1     = siter->second;
-            SST_LOCK.unlock();
 
             //Spawn a thread to create the SST
             Compact_Container worker_data;
@@ -215,10 +218,17 @@ void Column::Compact_Master() {
             worker_data.t0_uid = t0_uid;
             worker_data.t1_uid = t1_uid;
 
-            if(_cworkers.size() == 0) {
-                _cworkers.push_back(thread(&Column::compact_tables, this, &worker_data));
-                data.push_back(worker_data);
-            }
+            compact_tables(&worker_data);
+            _sst_map.erase(t0_uid);
+            //t0->remove_file();
+
+            SST_LOCK.unlock();
+
+            break;
+           // if(_cworkers.size() == 0) {
+           //     _cworkers.push_back(thread(&Column::compact_tables, this, &worker_data));
+           //     data.push_back(worker_data);
+           // }
 
         }
 
@@ -239,6 +249,7 @@ void Column::Compact_Master() {
                 SST_LOCK.unlock();
 
                 cout << "WE JUST COMPACTED TWO SSTs" << std::endl;
+
             }
 
         }
@@ -250,7 +261,7 @@ void Column::Compact_Master() {
 void Column::Dump_Master() {
 
     unique_lock<mutex> TABLE_LOCK(_tables_lock, std::defer_lock);
-    unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
+    //unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
     vector<Dump_Container> data;
 
@@ -530,15 +541,23 @@ int SSTable::read(string key, string *out_str) {
 
     long offset;
 
+    std::cout << "READING FROM FILE: " << _filename << std::endl;
+    for(auto& i : _index) {
+        std::cout << "BLEH: " << i.first << std::endl;
+    }
+
     ifstream infile(_filename.c_str());
     auto iter = _index.find(key);
 
     if (iter != _index.end()) {
 
+        std::cout << "Theres some entry here..." << std::endl;
         index_entry_t *entry = iter->second;
 
         //Data is in SSTable
         if (entry->valid) {
+
+            std::cout << "We found the value!" << std::endl;
 
             offset = entry->offset;
 
@@ -557,6 +576,7 @@ int SSTable::read(string key, string *out_str) {
     }
 
     //NOT FOUND!
+    std::cout << "NOT found the value!" << std::endl;
     return -1;
 }
 
@@ -646,7 +666,18 @@ int SSTable::append_data_block(string data,
 
     }
 
+    //FIXME: Does this actually add in the values?
+    std::cout << "THIS IS FOR FILE: " << _filename << std::endl;
+    for(auto& i : new_index) {
+        std::cout << "NEW ENtRY FOR " << i.first << std::endl;
+    }
+
     _index.insert(new_index.begin(), new_index.end());
+
+    for(auto& i: _index) {
+        std::cout << "ENtRY FOR " << i.first << std::endl;
+    }
+
     return 0;
 }
 
