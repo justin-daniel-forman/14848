@@ -55,15 +55,6 @@ Column::~Column() {
     _cm.join();
     _dm.join();
 
-    //Join on every worker in cworkers
-    while(!_cworkers.empty()) {
-        auto& thread = _cworkers[0];
-        if(thread.joinable()) {
-            thread.join();
-            _cworkers.erase(_cworkers.begin());
-        }
-    }
-
     //Join on every worker in dworkers
     while(!_dworkers.empty()) {
         auto& thread = _dworkers[0];
@@ -82,7 +73,7 @@ string Column::read (string key) {
 
     unique_lock<mutex> MEM_LOCK(_mtable_lock, std::defer_lock);
     unique_lock<mutex> TABLES_LOCK(_tables_lock, std::defer_lock);
-    //unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
+    unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
     //Read from memtable
     MEM_LOCK.lock();
@@ -105,7 +96,6 @@ string Column::read (string key) {
     if(not_found) {
         SST_LOCK.lock();
         for (auto& sst_iter: _sst_map) {
-            cout << "Reading: " << sst_iter.first <<  std::endl;
             not_found = sst_iter.second->read(key, &ret);
             if (!not_found) {
                 break;
@@ -163,8 +153,6 @@ void Column::dump_map_to_disk (Dump_Container *data) {
 }
 
 void Column::compact_tables (Compact_Container *data) {
-
-    std::cout << "MERGING " << data->t0_uid << " AND " << data->t1_uid << std::endl;
     data->t0->merge_into_table(data->t1, data->t1->get_file_len());
     return;
 }
@@ -172,7 +160,7 @@ void Column::compact_tables (Compact_Container *data) {
 void Column::Compact_Master() {
 
     unique_lock<mutex> TABLE_LOCK(_tables_lock, std::defer_lock);
-    //unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
+    unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
     deque<Compact_Container> data;
 
@@ -231,7 +219,7 @@ void Column::Compact_Master() {
 void Column::Dump_Master() {
 
     unique_lock<mutex> TABLE_LOCK(_tables_lock, std::defer_lock);
-    //unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
+    unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
     vector<Dump_Container> data;
 
@@ -312,7 +300,6 @@ void Column::Dump_Master() {
                 _dworkers.erase(_dworkers.begin());
                 data.erase(data.begin());
 
-                cout << "WE JUST DUMPED TO DISK!!!!!" << std::endl;
             }
         }
 
@@ -331,8 +318,6 @@ Memtable::Memtable(string name, long uid) {
     _uid = uid;
     _size = 0;
     _taking_dump = false;
-
-    cout << "Creating " << _name << std::endl;
     return;
 }
 
@@ -345,7 +330,6 @@ Memtable::~Memtable(void) {
 
 int Memtable::write (string key, string value) {
 
-    //FIXME - revisit
     if (_size + value.length() <= PAGE_SIZE) {
 
         _map[key] = value;
@@ -423,8 +407,6 @@ SSTable::SSTable(string uuid,
     _filename = uuid;
     _file_len = 0;
     _compression_opt = compress_opt;
-
-    cout << "Creating " << _name << std::endl;
 
     //Open the file as append only
     outfile.open(_name.c_str(), ofstream::trunc);
@@ -521,13 +503,10 @@ int SSTable::read(string key, string *out_str) {
 
     if (iter != _index.end()) {
 
-        std::cout << "Theres some entry here..." << std::endl;
         index_entry_t *entry = iter->second;
 
         //Data is in SSTable
         if (entry->valid) {
-
-            std::cout << "We found the value!" << std::endl;
 
             offset = entry->offset;
 
@@ -546,7 +525,6 @@ int SSTable::read(string key, string *out_str) {
     }
 
     //NOT FOUND!
-    std::cout << "NOT found the value!" << std::endl;
     return -1;
 }
 
@@ -613,8 +591,6 @@ int SSTable::append_data_block(string data,
                                map<string, index_entry_t*> new_index,
                                int compression_opt) {
 
-    std::cout << "WE ARE WRITING A NEW DATA BLOCK INTO " << _filename <<  std::endl;
-
     ofstream outfile;
     ofstream myfile;
 
@@ -623,7 +599,6 @@ int SSTable::append_data_block(string data,
         return -1;
     }
 
-    std::cout << "OPENING " << _name << std::endl;
     outfile.open(_name.c_str(), std::ios_base::app);
     outfile << data.c_str();
     outfile.close();

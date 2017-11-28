@@ -24,24 +24,97 @@ int main() {
 
     int num_fails = 0;
 
-    Test_Column tc(0);
-    num_fails += tc.insert_test(4000);
-    exit(-1);
-    
-    //num_fails += tc.mixed_test(10000, 10, 10); //This can fail as we increase dups and deletes
+    //Test_Column tc(0);
+    //num_fails += tc.insert_test(4000);
+    //num_fails += tc.mixed_test(10000, 100, 100); //This can fail as we increase dups and deletes
 
-    //std::set <std::string> column_names = {"c0", "c1", "c2", "c3", "c4"};
-    //Test_DB tdb(column_names);
+    std::set <std::string> column_names = {"c0", "c1", "c2", "c3", "c4"};
+    Test_DB tdb(column_names);
 
-    //num_fails += tdb.single_insert_test(500);
-    //num_fails += tdb.single_insert_test(4000);
-    //num_fails += tdb.many_mixed_test(1000, 10, 10); //This fails as we increase # writes
+    //num_fails += tdb.single_insert_test(1000);
+    //num_fails += tdb.many_mixed_test(400, 4000, 0); //This fails as we increase # writes
 
-    //if(num_fails != 0) {
-    //    std::cout << "FAILURE WITH SIGNATURE: " << num_fails << std::endl;
-    //} else {
-    //    std::cout << "ALL TESTS PASS" << std::endl;
-    //}
+    if(num_fails != 0) {
+        std::cout << "FAILURE WITH SIGNATURE: " << num_fails << std::endl;
+    } else {
+        std::cout << "ALL TESTS PASS" << std::endl;
+    }
+
+
+    //Higher level API demo
+    DB myDB;
+    std::set<std::string> schema = {"age", "first_name", "last_name", "grade"};
+    myDB.new_column_family("students", &schema, 0);
+
+    std::map<std::string, std::string> entry;
+    entry.clear();
+    entry["age"] = "22";
+    entry["first_name"] = "Justin";
+    entry["last_name"] = "Forman";
+    entry["grade"] = "IMB";
+    myDB.insert("students", "Justin", &entry);
+
+    entry.clear();
+    entry["age"] = "23";
+    entry["first_name"] = "Mark";
+    entry["last_name"] = "Wuebbens";
+    entry["grade"] = "IMB";
+    myDB.insert("students", "Mark", &entry);
+    myDB.insert("students", "F", &entry);
+
+    schema = {"zip", "state", "city"};
+    myDB.new_column_family("addresses", &schema, 0);
+
+    entry.clear();
+    entry["zip"] = "15217";
+    entry["state"] = "PA";
+    entry["city"] = "PGH";
+    myDB.insert("addresses", "Justin", &entry);
+
+    entry.clear();
+    entry["zip"] = "15217";
+    entry["state"] = "PA";
+    entry["city"] = "PGH";
+    myDB.insert("addresses", "Mark", &entry);
+
+    entry.clear();
+    entry["zip"] = "00000";
+    entry["state"] = "HERE";
+    entry["city"] = "NOWHERE";
+    myDB.insert("addresses", "Nobody", &entry);
+
+
+    //Show off SELECT
+    Search_Result sr;
+    sr.reset();
+    std::set <std::string> cols = {"zip", "state"};
+    std::set <std::string> cfs;
+    myDB.select(&sr, "addresses", "M", "O", &cols);
+    std::cout << "SAMPLE SELECT:" << std::endl;
+    sr.print_result();
+    std::cout << "\n\n";
+
+    //Show off JOIN capabilities
+    cfs = {"students"};
+    sr.reset();
+    myDB.join(&sr, &cfs, "addresses");
+    std::cout << "SAMPLE JOIN:" << std::endl;
+    sr.print_result();
+    std::cout << "\n\n";
+
+    cfs = {"addresses"};
+    sr.reset();
+    myDB.join(&sr, &cfs, "students");
+    std::cout << "SAMPLE JOIN:" << std::endl;
+    sr.print_result();
+    std::cout << "\n\n";
+
+
+    //Show off cmp
+    std::cout << "MAX AGE IS: " << myDB.compare("students", "age", "0", cmp) << std::endl;
+
+    //Show off agg
+    std::cout << "TOTAL AGE IS: " << myDB.aggregate("students", "age", "0", agg) << std::endl;
 
     return 0;
 
@@ -65,7 +138,7 @@ std::string agg(std::string a, std::string b) {
 
     int ia = std::stoi(a);
 
-    ia += string_to_int(b);
+    ia += std::stoi(b);
 
     return std::to_string(ia);
 
@@ -373,8 +446,10 @@ int Test_Column::mixed_test(int num_inserts, int num_deletes, int num_dups) {
     string vstr;
     string kstr;
 
+    int n = num_inserts + num_deletes + num_dups;
+
     //Write all values into test column
-    for(int i = 0; i < num_inserts + num_deletes + num_dups; i++) {
+    for(int i = 0; i < n; i++) {
 
         int entropy = rand() % 10;
 
@@ -423,7 +498,7 @@ int Test_Column::mixed_test(int num_inserts, int num_deletes, int num_dups) {
     while(_iter != _map.end()) {
         vstr = _col->read(_iter->first);
         if(vstr != _iter->second) {
-            cout << "COLUMN INSERT TEST FAIL!" << std::endl;
+            cout << "COLUMN MIXED TEST FAIL!" << std::endl;
             cout << "Actual: " << _iter->second << std::endl;
             cout << "Observed: " << vstr << std::endl;
             return -1;
@@ -432,7 +507,7 @@ int Test_Column::mixed_test(int num_inserts, int num_deletes, int num_dups) {
 
     }
 
-    cout << "COLUMN INSERT TEST SUCCESS" << std::endl;
+    cout << "COLUMN MIXED TEST SUCCESS" << std::endl;
     return 0;
 
 }

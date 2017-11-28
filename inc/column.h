@@ -47,7 +47,6 @@ private:
     std::thread dumper;
     std::thread compactor;
 
-    std::deque <std::thread> _cworkers;
     std::vector <std::thread> _dworkers;
     std::thread _cm;
     std::thread _dm;
@@ -56,7 +55,6 @@ private:
     //Mutexes
     std::mutex MEM_LOCK;
     std::mutex TABLE_LOCK;
-    std::mutex SST_LOCK;
 
     //Single writeable memtable
     std::mutex _mtable_lock;
