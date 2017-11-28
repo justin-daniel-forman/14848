@@ -40,20 +40,19 @@ Column::Column (string name, int comp_opt) {
     _mtable = new Memtable(_name+"_mtable"+to_string(table_id), table_id);
 
     //Spawn off background threads to handle dumping to disk and compaction
-    //dumper = thread (&Column::Dump_Master, this).detach();
     thread (&Column::Dump_Master, this).detach();
-    //thread compact_master (&Column::Compact_Master, this);
+    thread (&Column::Compact_Master, this).detach();
 
     cout << "Created " << _name << std::endl;
 }
 
 
 Column::~Column() {
-    delete _mtable;
-
-    //FIXME - moar better
-    //dumper.join();
-    //_tables_map.clear();
+    //FIXME: Technically we should dump all to disk
+    //Delete all of the memtables
+    for (auto& i : _tables_map) {
+        delete i.second;
+    }
 }
 
 
@@ -165,12 +164,24 @@ void Column::dump_map_to_disk (Dump_Container *data) {
 
 }
 
+void Column::compact_tables (Compact_Container *data) {
+
+    std::cout << "MERGING " << data->t0_uid << " AND " << data->t1_uid << std::endl;
+
+    data->t0->merge_into_table(*(data->t1), data->t1->get_file_len());
+    data->next_table = data->t1;
+    data->next_uid   = data->t1_uid;
+
+    return;
+}
+
 void Column::Compact_Master() {
 
     unique_lock<mutex> TABLE_LOCK(_tables_lock, std::defer_lock);
     unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
-    deque<Compact_Worker*> workers;
+    vector<Compact_Container> data;
+    vector<thread> workers;
 
     int delay_ms = 10;
 
@@ -180,21 +191,75 @@ void Column::Compact_Master() {
 
         //Initiate Compaction Stuffs
         if (_sst_map.size() < 10) {
-            //Nothing to do
+            //Not enough SSTs to merit a compaction, try again at a later time
             delay_ms += 1;
 
         } else {
             //Initiate compacting two SSTs together
-            //long newer_uid, older_uid;
+            std::map <long, SSTable*>::iterator siter;
+            long t0_uid;
+            long t1_uid;
+            //long next_uid;
+            SSTable *t0;
+            SSTable *t1;
+
             delay_ms = (delay_ms * 4) / 5;
+
+            //Get the next SST uid
+            //SST_LOCK.lock();
+            //next_uid = _sst_uid++;
+            //SST_LOCK.unlock();
+
+            //Find the oldest two SSTs to merge
             SST_LOCK.lock();
-            //FIXME -implement
-            SST_LOCK.unlock();
+            siter  = _sst_map.begin();
+            t0_uid = siter->first;
+            t0     = siter->second;
+            t1_uid = (++siter)->first;
+            t1     = siter->second;
+             SST_LOCK.unlock();
+
+            //Spawn a thread to create the SST
+            Compact_Container worker_data;
+            worker_data.t0 = t0;
+            worker_data.t1 = t1;
+            worker_data.t0_uid = t0_uid;
+            worker_data.t1_uid = t1_uid;
+            //worker_data.next_uid = next_uid;
+
+            workers.push_back(thread(&Column::compact_tables, this, &worker_data));
+            data.push_back(worker_data);
+
         }
 
         //Join on Workers, and finalize a compaction
+        if(!workers.empty()) {
+            auto& thread = workers[0];
+            auto meta = data[0];
+            if(thread.joinable()) {
+                thread.join();
+
+                //Remove the old entries from the list and add the new one
+                SST_LOCK.lock();
+                _sst_map.erase(meta.t0_uid);
+                delete meta.t0;
+
+                //FIXME: If there is an out-of-place creation of a new table,
+                //then we will need to erase t1 as well
+
+                _sst_map[meta.next_uid] = meta.next_table;
+                SST_LOCK.unlock();
+
+                workers.erase(workers.begin());
+                data.erase(data.begin());
+
+                cout << "WE JUST COMPACTED TWO SSTs" << std::endl;
+            }
+
+        }
 
     }
+
 }
 
 void Column::Dump_Master() {
@@ -225,8 +290,8 @@ void Column::Dump_Master() {
 
             //Find the oldest table to dump
             TABLE_LOCK.lock();
-            for(auto rit=_tables_map.rbegin();
-                rit!=_tables_map.rend();
+            for(auto rit=_tables_map.begin();
+                rit!=_tables_map.end();
                 ++rit) {
 
                 if (!rit->second->is_taken()) {
@@ -272,6 +337,7 @@ void Column::Dump_Master() {
 
                 //Remove the now redundant table
                 TABLE_LOCK.lock();
+                std::cout << "ERASING: " << meta.table_uid << std::endl;
                 _tables_map.erase(meta.table_uid);
                 TABLE_LOCK.unlock();
 
@@ -445,8 +511,7 @@ SSTable::SSTable(string uuid,
  ***/
 SSTable::~SSTable(void) {
 
-    //FIXME - delete the index_entry_t values
-
+    std::remove(_filename.c_str());
     return;
 }
 
@@ -517,6 +582,7 @@ bool SSTable::peek(string key) {
     return (iter != _index.end());
 
 }
+
 /***
  *
  *  Merges two SSTables together into one file on disk
@@ -565,6 +631,8 @@ int SSTable::merge_into_table(SSTable new_table, long table_offset) {
 int SSTable::append_data_block(string data,
                                map<string, index_entry_t*> new_index,
                                int compression_opt) {
+
+    std::cout << "WE ARE WRITING A NEW DATA BLOCK INTO " << _filename <<  std::endl;
 
     ofstream outfile;
     long data_length = data.length();

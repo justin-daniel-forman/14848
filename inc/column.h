@@ -24,6 +24,15 @@ struct Dump_Container {
     SSTable *new_sst;
 };
 
+struct Compact_Container {
+    long t0_uid;
+    long t1_uid;
+    long next_uid;
+    SSTable *t0;
+    SSTable *t1;
+    SSTable *next_table;
+};
+
 /*
  *  Keeps track of attributes in our NoSQL Database
  *
@@ -55,7 +64,7 @@ private:
     void Dump_Master();
     void Compact_Master();
     void dump_map_to_disk(Dump_Container*);
-    void compact_sst(long, long, SSTable*);
+    void compact_tables(Compact_Container*);
 
 public:
     Column(std::string, int = 0);

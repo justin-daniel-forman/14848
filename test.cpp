@@ -25,15 +25,15 @@ int main() {
     int num_fails = 0;
 
     Test_Column tc(0);
-    num_fails += tc.insert_test(5000);
-    num_fails += tc.mixed_test(10000, 10, 10); //This can fail as we increase dups and deletes
+    num_fails += tc.insert_test(10000);
+    //num_fails += tc.mixed_test(10000, 10, 10); //This can fail as we increase dups and deletes
 
     std::set <std::string> column_names = {"c0", "c1", "c2", "c3", "c4"};
     Test_DB tdb(column_names);
 
-    num_fails += tdb.single_insert_test(500);
-    num_fails += tdb.single_insert_test(4000);
-    num_fails += tdb.many_mixed_test(1000, 10, 10); //This fails as we increase # writes
+    //num_fails += tdb.single_insert_test(500);
+    //num_fails += tdb.single_insert_test(4000);
+    //num_fails += tdb.many_mixed_test(1000, 10, 10); //This fails as we increase # writes
 
     if(num_fails != 0) {
         std::cout << "FAILURE WITH SIGNATURE: " << num_fails << std::endl;
@@ -41,6 +41,11 @@ int main() {
         std::cout << "ALL TESTS PASS" << std::endl;
     }
 
+    //A detached thread might wake up after we have exited main, but not
+    //finished the process. Since the destructor for the class may have already
+    //run, the thread would be really confused if it were to wake up. So let's
+    //just nuke the process here so that we don't run into that problem.
+    //exit(0);
     return 0;
 
 }
@@ -325,8 +330,14 @@ int Test_Column::insert_test(int num_inserts) {
         string tk(small_buf);
         string tv(med_buf);
 
-        kstr = tk;
-        vstr = tv;
+        //kstr = tk;
+        //vstr = tv;
+        kstr = std::to_string(i);
+
+        vstr = std::to_string(i);
+        for(int q = 0; q < 100; q++) {
+            vstr.append(std::to_string(i));
+        }
 
         _col->write(kstr, vstr);
         _map[kstr] = vstr;
@@ -336,9 +347,11 @@ int Test_Column::insert_test(int num_inserts) {
     //Read all values from test column
     _iter = _map.begin();
     while(_iter != _map.end()) {
+        std::cout << "CHECKING: " << _iter->first << std::endl;
         vstr = _col->read(_iter->first);
         if(vstr != _iter->second) {
             cout << "COLUMN INSERT TEST FAIL!" << std::endl;
+            cout << "Index: " << _iter->first << std::endl;
             cout << "Actual: " << _iter->second << std::endl;
             cout << "Observed: " << vstr << std::endl;
             return -1;
