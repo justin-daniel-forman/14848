@@ -25,7 +25,7 @@ int main() {
     int num_fails = 0;
 
     Test_Column tc(0);
-    num_fails += tc.insert_test(10000);
+    num_fails += tc.insert_test(4000);
     exit(-1);
     
     //num_fails += tc.mixed_test(10000, 10, 10); //This can fail as we increase dups and deletes
@@ -343,7 +343,7 @@ int Test_Column::insert_test(int num_inserts) {
 
     //Read all values from test column
     _iter = _map.begin();
-    //while(_iter != _map.end()) {
+    while(_iter != _map.end()) {
         vstr = _col->read(_iter->first);
         if(vstr != _iter->second) {
             cout << "COLUMN INSERT TEST FAIL!" << std::endl;
@@ -354,7 +354,7 @@ int Test_Column::insert_test(int num_inserts) {
         }
         _iter++;
 
-    //}
+    }
 
     cout << "COLUMN INSERT TEST SUCCESS" << std::endl;
     return 0;

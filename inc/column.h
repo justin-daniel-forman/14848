@@ -53,6 +53,11 @@ private:
     std::thread _dm;
     bool _cleanup;
 
+    //Mutexes
+    std::mutex MEM_LOCK;
+    std::mutex TABLE_LOCK;
+    std::mutex SST_LOCK;
+
     //Single writeable memtable
     std::mutex _mtable_lock;
     Memtable *_mtable;

@@ -26,9 +26,11 @@ private:
     long _file_len;
     long _compression_opt;
 
-    std::map<std::string, index_entry_t*> _index;
 
 public:
+
+    std::map<std::string, index_entry_t*> _index;
+
     SSTable(std::string name,
             std::map<std::string, std::string> memtable_map,
             int compress_opt = 0);
@@ -39,7 +41,7 @@ public:
     long get_file_len();
     void remove_file(void);
 
-    int merge_into_table(SSTable, long);
+    int merge_into_table(SSTable*, long);
     int append_data_block(std::string,
                           std::map<std::string, index_entry_t*>,
                           int);

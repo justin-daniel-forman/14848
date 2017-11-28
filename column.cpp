@@ -165,8 +165,7 @@ void Column::dump_map_to_disk (Dump_Container *data) {
 void Column::compact_tables (Compact_Container *data) {
 
     std::cout << "MERGING " << data->t0_uid << " AND " << data->t1_uid << std::endl;
-    data->t0->merge_into_table(*(data->t1), data->t1->get_file_len());
-
+    data->t0->merge_into_table(data->t1, data->t1->get_file_len());
     return;
 }
 
@@ -211,7 +210,7 @@ void Column::Compact_Master() {
             t1_uid = (++siter)->first;
             t1     = siter->second;
 
-            //Spawn a thread to create the SST
+            //Perform the compaction in this thread
             Compact_Container worker_data;
             worker_data.t0 = t0;
             worker_data.t1 = t1;
@@ -220,37 +219,8 @@ void Column::Compact_Master() {
 
             compact_tables(&worker_data);
             _sst_map.erase(t0_uid);
-            //t0->remove_file();
-
+            t0->remove_file();
             SST_LOCK.unlock();
-
-            break;
-           // if(_cworkers.size() == 0) {
-           //     _cworkers.push_back(thread(&Column::compact_tables, this, &worker_data));
-           //     data.push_back(worker_data);
-           // }
-
-        }
-
-        //Join on Workers, and finalize a compaction
-        if(!_cworkers.empty()) {
-            auto& thread = _cworkers[0];
-            auto meta = data[0];
-            if(thread.joinable()) {
-                thread.join();
-
-                //Remove the old entries from the list and add the new one
-                std::cout << "DELETED " << meta.t0_uid << std::endl;
-
-                SST_LOCK.lock();
-                meta.t0->remove_file();
-                _cworkers.pop_front();
-                data.pop_front();
-                SST_LOCK.unlock();
-
-                cout << "WE JUST COMPACTED TWO SSTs" << std::endl;
-
-            }
 
         }
 
@@ -541,10 +511,10 @@ int SSTable::read(string key, string *out_str) {
 
     long offset;
 
-    std::cout << "READING FROM FILE: " << _filename << std::endl;
-    for(auto& i : _index) {
-        std::cout << "BLEH: " << i.first << std::endl;
-    }
+    //std::cout << "READING FROM FILE: " << _filename << std::endl;
+    //for(auto& i : _index) {
+    //    std::cout << "BLEH: " << i.first << std::endl;
+    //}
 
     ifstream infile(_filename.c_str());
     auto iter = _index.find(key);
@@ -593,7 +563,7 @@ bool SSTable::peek(string key) {
  *  Merges two SSTables together into one file on disk
  *
  ***/
-int SSTable::merge_into_table(SSTable new_table, long table_offset) {
+int SSTable::merge_into_table(SSTable *new_table, long table_offset) {
 
     string new_block, data_key, data;
     long rel_offset, local_offset, data_len;
@@ -604,7 +574,7 @@ int SSTable::merge_into_table(SSTable new_table, long table_offset) {
     for (auto& iter : _index) {
 
         //  key is not already in new table ---- key has valid entry
-        if ((!new_table.peek(iter.first)) and (iter.second->valid)) {
+        if ((!new_table->peek(iter.first)) and (iter.second->valid)) {
 
 
             //Found an entry to add!
@@ -634,7 +604,8 @@ int SSTable::merge_into_table(SSTable new_table, long table_offset) {
     infile.close();
 
     //Instruct the newer table to add the new made block of data
-    int st = new_table.append_data_block(new_block, new_map, _compression_opt);
+    int st = new_table->append_data_block(new_block, new_map, _compression_opt);
+
     return st;
 }
 
@@ -666,17 +637,7 @@ int SSTable::append_data_block(string data,
 
     }
 
-    //FIXME: Does this actually add in the values?
-    std::cout << "THIS IS FOR FILE: " << _filename << std::endl;
-    for(auto& i : new_index) {
-        std::cout << "NEW ENtRY FOR " << i.first << std::endl;
-    }
-
     _index.insert(new_index.begin(), new_index.end());
-
-    for(auto& i: _index) {
-        std::cout << "ENtRY FOR " << i.first << std::endl;
-    }
 
     return 0;
 }
