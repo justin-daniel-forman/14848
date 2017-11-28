@@ -24,12 +24,12 @@ int main() {
 
     int num_fails = 0;
 
-    //Test_Column tc(0);
+    Test_Column tc(0);
     //num_fails += tc.insert_test(4000);
-    //num_fails += tc.mixed_test(10000, 100, 100); //This can fail as we increase dups and deletes
+    num_fails += tc.mixed_test(4000, 100, 100);
 
-    std::set <std::string> column_names = {"c0", "c1", "c2", "c3", "c4"};
-    Test_DB tdb(column_names);
+    //std::set <std::string> column_names = {"c0", "c1", "c2", "c3", "c4"};
+    //Test_DB tdb(column_names);
 
     //num_fails += tdb.single_insert_test(1000);
     //num_fails += tdb.many_mixed_test(400, 4000, 0); //This fails as we increase # writes
@@ -479,9 +479,14 @@ int Test_Column::mixed_test(int num_inserts, int num_deletes, int num_dups) {
 
             string tk(small_buf);
             string tv(med_buf);
-
             kstr = tk;
             vstr = tv;
+
+            kstr = std::to_string(i);
+            vstr = std::to_string(i);
+            for(int q = 0; q < 100; q++) {
+                vstr.append(std::to_string(i));
+            }
 
             _col->write(kstr, vstr);
             _map[kstr] = vstr;
