@@ -5,6 +5,7 @@
 #include <string>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include "memtable.h"
 #include "disktable.h"
@@ -45,6 +46,12 @@ private:
     int _compression_opt;
     std::thread dumper;
     std::thread compactor;
+
+    std::deque <std::thread> _cworkers;
+    std::vector <std::thread> _dworkers;
+    std::thread _cm;
+    std::thread _dm;
+    bool _cleanup;
 
     //Single writeable memtable
     std::mutex _mtable_lock;

@@ -6,6 +6,7 @@
  *  in our NoSQL database.
  *
  *  Authors: Mark Wuebbens
+ *           Justin Forman
  *
  ***/
 
@@ -40,21 +41,40 @@ Column::Column (string name, int comp_opt) {
     _mtable = new Memtable(_name+"_mtable"+to_string(table_id), table_id);
 
     //Spawn off background threads to handle dumping to disk and compaction
-    thread (&Column::Dump_Master, this).detach();
-    thread (&Column::Compact_Master, this).detach();
+    _cleanup = false;
+    _dm = thread (&Column::Dump_Master, this);
+    _cm = thread (&Column::Compact_Master, this);
 
     cout << "Created " << _name << std::endl;
 }
 
 
 Column::~Column() {
-    //FIXME: Technically we should dump all to disk
-    //Delete all of the memtables
-    for (auto& i : _tables_map) {
-        delete i.second;
-    }
-}
 
+    _cleanup = true;
+    _cm.join();
+    _dm.join();
+
+    //Join on every worker in cworkers
+    while(!_cworkers.empty()) {
+        auto& thread = _cworkers[0];
+        if(thread.joinable()) {
+            thread.join();
+            _cworkers.erase(_cworkers.begin());
+        }
+    }
+
+    //Join on every worker in dworkers
+    while(!_dworkers.empty()) {
+        auto& thread = _dworkers[0];
+        if(thread.joinable()) {
+            thread.join();
+            _dworkers.erase(_dworkers.begin());
+        }
+    }
+
+    return;
+}
 
 string Column::read (string key) {
     int not_found;
@@ -125,34 +145,6 @@ void Column::write (string key, string value) {
 //Map an empty string to this key, thus later reads for key will return nothing
 void Column::del (string key) {
     this->write(key, "");
-
-    //unique_lock<mutex> MEM_LOCK(_mtable_lock, std::defer_lock);
-    //unique_lock<mutex> TABLES_LOCK(_tables_lock, std::defer_lock);
-    //unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
-
-    ////Delete from memtable
-    //MEM_LOCK.lock();
-    //_mtable->del(key);
-    //MEM_LOCK.unlock();
-
-    ////Delete from RONLY tables
-    //TABLES_LOCK.lock();
-    //for (auto& iter: _tables_map) {
-
-    //    if (!iter.second->is_taken()) {
-    //        iter.second->del(key);
-    //    }
-    //}
-    //TABLES_LOCK.unlock();
-
-    ////Invalidate in all SSTables
-    //SST_LOCK.lock();
-    //for (auto& sst_iter: _sst_map) {
-    //    //Blindly invalidate for all SSTs
-    //    sst_iter->invalidate(key);
-    //}
-    //SST_LOCK.unlock();
-
 }
 
 void Column::dump_map_to_disk (Dump_Container *data) {
@@ -167,8 +159,8 @@ void Column::dump_map_to_disk (Dump_Container *data) {
 void Column::compact_tables (Compact_Container *data) {
 
     std::cout << "MERGING " << data->t0_uid << " AND " << data->t1_uid << std::endl;
-
     data->t0->merge_into_table(*(data->t1), data->t1->get_file_len());
+
     data->next_table = data->t1;
     data->next_uid   = data->t1_uid;
 
@@ -180,12 +172,15 @@ void Column::Compact_Master() {
     unique_lock<mutex> TABLE_LOCK(_tables_lock, std::defer_lock);
     unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
-    vector<Compact_Container> data;
-    vector<thread> workers;
+    deque<Compact_Container> data;
 
     int delay_ms = 10;
 
     while(1) {
+
+        if(_cleanup) { //called from destructor to stop this thread
+            break;
+        }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
 
@@ -199,16 +194,10 @@ void Column::Compact_Master() {
             std::map <long, SSTable*>::iterator siter;
             long t0_uid;
             long t1_uid;
-            //long next_uid;
             SSTable *t0;
             SSTable *t1;
 
             delay_ms = (delay_ms * 4) / 5;
-
-            //Get the next SST uid
-            //SST_LOCK.lock();
-            //next_uid = _sst_uid++;
-            //SST_LOCK.unlock();
 
             //Find the oldest two SSTs to merge
             SST_LOCK.lock();
@@ -217,7 +206,7 @@ void Column::Compact_Master() {
             t0     = siter->second;
             t1_uid = (++siter)->first;
             t1     = siter->second;
-             SST_LOCK.unlock();
+            SST_LOCK.unlock();
 
             //Spawn a thread to create the SST
             Compact_Container worker_data;
@@ -225,33 +214,27 @@ void Column::Compact_Master() {
             worker_data.t1 = t1;
             worker_data.t0_uid = t0_uid;
             worker_data.t1_uid = t1_uid;
-            //worker_data.next_uid = next_uid;
 
-            workers.push_back(thread(&Column::compact_tables, this, &worker_data));
+            _cworkers.push_back(thread(&Column::compact_tables, this, &worker_data));
             data.push_back(worker_data);
 
         }
 
         //Join on Workers, and finalize a compaction
-        if(!workers.empty()) {
-            auto& thread = workers[0];
+        if(!_cworkers.empty()) {
+            auto& thread = _cworkers[0];
             auto meta = data[0];
             if(thread.joinable()) {
                 thread.join();
 
                 //Remove the old entries from the list and add the new one
+                std::cout << "DELETED " << meta.t0_uid << std::endl;
+
                 SST_LOCK.lock();
-                _sst_map.erase(meta.t0_uid);
-                delete meta.t0;
-
-                //FIXME: If there is an out-of-place creation of a new table,
-                //then we will need to erase t1 as well
-
-                _sst_map[meta.next_uid] = meta.next_table;
+                meta.t0->remove_file();
+                _cworkers.pop_front();
+                data.pop_front();
                 SST_LOCK.unlock();
-
-                workers.erase(workers.begin());
-                data.erase(data.begin());
 
                 cout << "WE JUST COMPACTED TWO SSTs" << std::endl;
             }
@@ -268,11 +251,14 @@ void Column::Dump_Master() {
     unique_lock<mutex> SST_LOCK(_sst_lock, std::defer_lock);
 
     vector<Dump_Container> data;
-    vector<thread> workers;
 
     int delay_ms = 10;
 
     while(1) {
+
+        if(_cleanup) { //Called from destructor when it's time for cleanup
+            break;
+        }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
 
@@ -301,7 +287,7 @@ void Column::Dump_Master() {
                     break;
                 }
             }
-            assert(!table_raw.empty());
+            //assert(!table_raw.empty());
             TABLE_LOCK.unlock();
 
             //Get the next SST uid
@@ -315,15 +301,15 @@ void Column::Dump_Master() {
             worker_data.sst_uid = sst_uid;
             worker_data.raw_map = table_raw;
 
-            workers.push_back(
+            _dworkers.push_back(
                 thread (&Column::dump_map_to_disk, this, &worker_data));
 
             data.push_back(worker_data);
         }
 
         //Attempt to join on oldest Worker
-        if (!workers.empty()) {
-            auto& thread = workers[0];
+        if (!_dworkers.empty()) {
+            auto& thread = _dworkers[0];
             auto meta = data[0];
             if (thread.joinable()) {
 
@@ -337,11 +323,10 @@ void Column::Dump_Master() {
 
                 //Remove the now redundant table
                 TABLE_LOCK.lock();
-                std::cout << "ERASING: " << meta.table_uid << std::endl;
                 _tables_map.erase(meta.table_uid);
                 TABLE_LOCK.unlock();
 
-                workers.erase(workers.begin());
+                _dworkers.erase(_dworkers.begin());
                 data.erase(data.begin());
 
                 cout << "WE JUST DUMPED TO DISK!!!!!" << std::endl;
@@ -351,6 +336,7 @@ void Column::Dump_Master() {
     } //while(1)
 
 }
+
 
 /*****************************************************************************
  *                                  MemTable                                 *
@@ -427,6 +413,8 @@ map<string, string> Memtable::take_map(void) {
     _taking_dump = true;
     return _map;
 }
+
+
 /*****************************************************************************
  *                                  SSTable                                  *
  *****************************************************************************/
@@ -506,18 +494,16 @@ SSTable::SSTable(string uuid,
 
 /***
  *
- *  Destructor for SSTable
+ * We clean up all of our SSTables when the program exits, but we don't
+ * necessarily want to remove the file on disk when the corresponding
+ * SSTable goes out of scope.
  *
  ***/
-SSTable::~SSTable(void) {
-
+void SSTable::remove_file() {
     std::remove(_filename.c_str());
     return;
 }
 
-/*
- *
- */
 void SSTable::invalidate(string key) {
 
     auto iter = _index.find(key);
@@ -526,9 +512,6 @@ void SSTable::invalidate(string key) {
     }
 }
 
-/*
- *
- */
 long SSTable::get_file_len() {
     return _file_len;
 }
@@ -600,6 +583,7 @@ int SSTable::merge_into_table(SSTable new_table, long table_offset) {
 
         //  key is not already in new table ---- key has valid entry
         if ((!new_table.peek(iter.first)) and (iter.second->valid)) {
+
             //Found an entry to add!
             data_key = iter.first;
             data_len = iter.second->len;
@@ -624,8 +608,11 @@ int SSTable::merge_into_table(SSTable new_table, long table_offset) {
         }
     }
 
+    infile.close();
+
     //Instruct the newer table to add the new made block of data
-    return new_table.append_data_block(new_block, new_map, _compression_opt);
+    int st = new_table.append_data_block(new_block, new_map, _compression_opt);
+    return st;
 }
 
 int SSTable::append_data_block(string data,
@@ -635,16 +622,21 @@ int SSTable::append_data_block(string data,
     std::cout << "WE ARE WRITING A NEW DATA BLOCK INTO " << _filename <<  std::endl;
 
     ofstream outfile;
-    long data_length = data.length();
+    ofstream myfile;
 
     if (compression_opt != _compression_opt) {
         cout <<"ERROR: cant merge data with different compression type!\n";
         return -1;
     }
 
-    outfile.open(_name.c_str(), ofstream::app);
-    outfile.write(data.c_str(), data_length);
+    std::cout << "OPENING " << _name << std::endl;
+    outfile.open(_name.c_str(), std::ios_base::app);
+    outfile << data.c_str();
     outfile.close();
+
+    myfile.open("JUSTIN", std::ios_base::app);
+    myfile << "foo";
+    myfile.close();
 
     _file_len = outfile.tellp();
 
@@ -656,12 +648,15 @@ int SSTable::append_data_block(string data,
     }
 
     _index.insert(new_index.begin(), new_index.end());
-
     return 0;
 }
+
+
 /*****************************************************************************
  *                                  BloomFilter                              *
  *****************************************************************************/
+
+
 BloomFilter::BloomFilter(int size) {
     cout << "Creating new BloomFilter" << std::endl;
 

@@ -32,12 +32,12 @@ public:
     SSTable(std::string name,
             std::map<std::string, std::string> memtable_map,
             int compress_opt = 0);
-    ~SSTable(void);
 
     int read(std::string, std::string*);
     bool peek(std::string);
     void invalidate(std::string);
     long get_file_len();
+    void remove_file(void);
 
     int merge_into_table(SSTable, long);
     int append_data_block(std::string,
