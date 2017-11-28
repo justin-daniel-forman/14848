@@ -15,6 +15,7 @@ using namespace std;
 
 int cmp (std::string, std::string);
 std::string agg(std::string, std::string);
+std::string str_hash(std::string, std::string);
 std::string cross(std::string, std::string);
 
 void generate_rand_string(char*, int);
@@ -25,21 +26,17 @@ int main() {
     int num_fails = 0;
 
     Test_Column tc(0);
-    //num_fails += tc.insert_test(4000);
-    num_fails += tc.mixed_test(4000, 100, 100);
+    num_fails += tc.mixed_test(8000, 500, 500);
 
-    //std::set <std::string> column_names = {"c0", "c1", "c2", "c3", "c4"};
-    //Test_DB tdb(column_names);
-
-    //num_fails += tdb.single_insert_test(1000);
-    //num_fails += tdb.many_mixed_test(400, 4000, 0); //This fails as we increase # writes
+    std::set <std::string> column_names = {"c0", "c1", "c2", "c3", "c4"};
+    Test_DB tdb(column_names);
+    num_fails += tdb.many_mixed_test(400, 1000, 10); //This fails as we increase # writes
 
     if(num_fails != 0) {
         std::cout << "FAILURE WITH SIGNATURE: " << num_fails << std::endl;
     } else {
         std::cout << "ALL TESTS PASS" << std::endl;
     }
-
 
     //Higher level API demo
     DB myDB;
@@ -146,6 +143,17 @@ std::string agg(std::string a, std::string b) {
 
 std::string cross(std::string a, std::string b) {
     return a.append(b);
+}
+
+
+std::string str_hash(std::string a, std::string b) {
+
+    int sum = stoi(a);
+    for (auto& c : b) {
+        sum += c;
+    }
+    return std::to_string(sum);
+
 }
 
 
@@ -357,7 +365,7 @@ void Test_DB::delete_random_entry(void) {
 int Test_DB::check_results(void) {
 
     for (auto& i : hashes) {
-        if(i.second != stoi(db.aggregate(cf_name, i.first, "0", agg))) {
+        if(i.second != stoi(db.aggregate(cf_name, i.first, "0", str_hash))) {
             return -1;
         }
     }
@@ -448,6 +456,8 @@ int Test_Column::mixed_test(int num_inserts, int num_deletes, int num_dups) {
 
     int n = num_inserts + num_deletes + num_dups;
 
+    _map.clear();
+
     //Write all values into test column
     for(int i = 0; i < n; i++) {
 
@@ -465,7 +475,9 @@ int Test_Column::mixed_test(int num_inserts, int num_deletes, int num_dups) {
 
             generate_rand_string(med_buf, msize);
             string tv(med_buf);
-            vstr = tv;
+            vstr = "I AM A DUP";
+
+            std::cout << "Dup on idx" << i % _keys.size() << std::endl;
 
             _map[_keys[i % _keys.size()]] = vstr;
             _col->write(_keys[i % _keys.size()], vstr);

@@ -95,8 +95,10 @@ string Column::read (string key) {
     //Read from the on disk SSTs
     if(not_found) {
         SST_LOCK.lock();
-        for (auto& sst_iter: _sst_map) {
-            not_found = sst_iter.second->read(key, &ret);
+
+        std::map<long, SSTable*>::reverse_iterator sst_iter;
+        for (sst_iter = _sst_map.rbegin(); sst_iter != _sst_map.rend(); sst_iter++) {
+            not_found = sst_iter->second->read(key, &ret);
             if (!not_found) {
                 break;
             }
