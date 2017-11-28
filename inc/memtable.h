@@ -28,7 +28,7 @@ public:
 
     bool is_taken();
     long get_uid();
-    std::map<std::string, std::string> take_map();
+    std::map<std::string, std::string>* take_map();
 };
 
 #endif /* MEMTABLE_H */

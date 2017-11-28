@@ -32,7 +32,7 @@ public:
     std::map<std::string, index_entry_t*> _index;
 
     SSTable(std::string name,
-            std::map<std::string, std::string> memtable_map,
+            std::map<std::string, std::string> *memtable_map,
             int compress_opt = 0);
 
     int read(std::string, std::string*);

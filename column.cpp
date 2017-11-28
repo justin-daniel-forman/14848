@@ -145,9 +145,10 @@ void Column::del (string key) {
 
 void Column::dump_map_to_disk (Dump_Container *data) {
 
+    assert(data->raw_map->size() > 0);
+
     //Create an SST from the provided map
     string sst_name = "sst" +  to_string(data->sst_uid) + "_" + _name;
-
     data->new_sst = new SSTable(sst_name, data->raw_map, _compression_opt);
 
 }
@@ -205,6 +206,7 @@ void Column::Compact_Master() {
             worker_data.t0_uid = t0_uid;
             worker_data.t1_uid = t1_uid;
 
+            std::cout << "Compacting Tables: " << t0_uid << ", " << t1_uid << std::endl;
             compact_tables(&worker_data);
             _sst_map.erase(t0_uid);
             t0->remove_file();
@@ -241,7 +243,7 @@ void Column::Dump_Master() {
         } else {
             //Initiate splilling a table to disk
             long table_uid, sst_uid;
-            map<string, string> table_raw;
+            map<string, string> *table_raw;
 
             delay_ms = (delay_ms * 4) / 5;
 
@@ -258,7 +260,7 @@ void Column::Dump_Master() {
                     break;
                 }
             }
-            //assert(!table_raw.empty());
+            assert(!table_raw->empty());
             TABLE_LOCK.unlock();
 
             //Get the next SST uid
@@ -271,6 +273,7 @@ void Column::Dump_Master() {
             worker_data.table_uid = table_uid;
             worker_data.sst_uid = sst_uid;
             worker_data.raw_map = table_raw;
+            assert(table_raw->size() > 0);
 
             _dworkers.push_back(
                 thread (&Column::dump_map_to_disk, this, &worker_data));
@@ -376,9 +379,11 @@ bool Memtable::is_taken() {
     return _taking_dump;
 }
 
-map<string, string> Memtable::take_map(void) {
+map<string, string>* Memtable::take_map(void) {
     _taking_dump = true;
-    return _map;
+
+    assert(_map.size() > 0);
+    return &_map;
 }
 
 
@@ -395,7 +400,7 @@ map<string, string> Memtable::take_map(void) {
  *
  ***/
 SSTable::SSTable(string uuid,
-                 map<string, string> data_map,
+                 map<string, string> *data_map,
                  int compress_opt) {
 
     ofstream outfile;
@@ -414,7 +419,7 @@ SSTable::SSTable(string uuid,
     if(outfile.is_open()) {
 
         //Write each entry to the file, save a mapping in our index
-        for (auto& iter: data_map) {
+        for (auto& iter: *data_map) {
 
             key.assign(iter.first);
             key_header.assign(key + "\n");

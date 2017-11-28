@@ -21,7 +21,7 @@ struct Dump_Container {
 
     long table_uid;
     long sst_uid;
-    std::map <std::string, std::string> raw_map;
+    std::map <std::string, std::string> *raw_map;
     SSTable *new_sst;
 };
 
